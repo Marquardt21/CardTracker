@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0D1B2A;
+  color: #FFFFFF;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  margin: 0;
+}
+
+#root { min-height: 100svh; }
+
+/* Minimum 44px tap targets for iPad (Apple HIG) */
+button, a, [role="button"], select { min-height: 44px; }

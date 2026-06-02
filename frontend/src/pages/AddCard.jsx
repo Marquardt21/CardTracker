@@ -1,0 +1,465 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { autocomplete, checkCardExists, createCard, searchSets } from '../api/client'
+import AutocompleteInput from '../components/AutocompleteInput'
+import ImportSetPanel from '../components/ImportSetPanel'
+import UnmatchedReviewModal from '../components/UnmatchedReviewModal'
+
+const CARD_TYPES  = ['base', 'rookie', 'parallel', 'autograph', 'patch_relic']
+const CONDITIONS  = ['poor', 'good', 'very_good', 'excellent', 'near_mint', 'mint']
+const TYPE_LABELS = { base: 'Base', rookie: 'Rookie', parallel: 'Parallel', autograph: 'Autograph', patch_relic: 'Patch / Relic' }
+const COND_LABELS = { poor: 'Poor', good: 'Good', very_good: 'Very Good', excellent: 'Excellent', near_mint: 'Near Mint', mint: 'Mint' }
+
+const inputCls  = "w-full bg-[#1A2E45] text-white placeholder-[#94A3B8] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC]"
+const selectCls = "w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC]"
+
+export default function AddCard() {
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
+
+  const prefillFromUrl = {
+    playerName:    params.get('player') || '',
+    brand:         params.get('brand') || '',
+    year:          params.get('year') || '',
+    setName:       params.get('set') || '',
+    cardNumber:    params.get('number') || '',
+    cardType:      params.get('type') || 'base',
+    parallelColor: params.get('parallel') || '',
+    printRun:      params.get('print_run') || '',
+    team:          params.get('team') || '',
+  }
+
+  // ── Step 1: Set ─────────────────────────────────────────────────────────────
+  const [setQuery,        setSetQuery]        = useState(prefillFromUrl.setName)
+  const [setOptions,      setSetOptions]      = useState([])
+  const [setOpen,         setSetOpen]         = useState(false)
+  const [setActive,       setSetActive]       = useState(-1)
+  const [selectedSet,     setSelectedSet]     = useState(null)
+  const setTimerRef     = useRef(null)
+  const setContainerRef = useRef(null)
+  const [selectedYear,    setSelectedYear]    = useState(prefillFromUrl.year || '')
+
+  // ── Step 2: Card number + variant selection ─────────────────────────────────
+  const [cardNumber,    setCardNumber]    = useState(prefillFromUrl.cardNumber)
+  const [cardType,      setCardType]      = useState(prefillFromUrl.cardType || 'base')
+  const [parallelColor, setParallelColor] = useState(prefillFromUrl.parallelColor || '')
+
+  // ── Uncontrolled fields (remounted via formKey when prefill changes) ─────────
+  const [prefill,  setPrefill]  = useState(prefillFromUrl)
+  const [formKey,  setFormKey]  = useState(0)
+
+  // ── Recently sold ────────────────────────────────────────────────────────────
+  const [showSoldSection, setShowSoldSection] = useState(false)
+
+  // ── Misc ────────────────────────────────────────────────────────────────────
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState(null)
+  const [savedCard,    setSavedCard]    = useState(null)
+  const [duplicates,   setDuplicates]   = useState(null)
+  const [pendingSave,  setPendingSave]  = useState(null)
+  const [showImport,   setShowImport]   = useState(false)
+  const [importResult, setImportResult] = useState(null)
+
+  // ── Set autocomplete ─────────────────────────────────────────────────────────
+  function handleSetInput(e) {
+    const q = e.target.value
+    setSetQuery(q)
+    setSelectedSet(null)
+    clearTimeout(setTimerRef.current)
+
+    if (q.length < 2) { setSetOptions([]); setSetOpen(false); return }
+
+    setTimerRef.current = setTimeout(async () => {
+      try {
+        const { data } = await searchSets(q)
+        setSetOptions(data)
+        setSetOpen(data.length > 0)
+        setSetActive(-1)
+      } catch {}
+    }, 250)
+  }
+
+  function handleSetKeyDown(e) {
+    if (!setOpen) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSetActive(i => Math.min(i + 1, setOptions.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSetActive(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter' && setActive >= 0) { e.preventDefault(); pickSet(setOptions[setActive]) }
+    else if (e.key === 'Escape') setSetOpen(false)
+  }
+
+  function pickSet(set) {
+    setSetQuery(set.set_name)
+    setSelectedSet(set)
+    setSetOpen(false)
+    setSelectedYear(String(set.year))
+    setPrefill(p => ({ ...p, brand: set.brand }))
+    setFormKey(k => k + 1)
+    setCardNumber('')
+    setCardType('base')
+    setParallelColor('')
+  }
+
+  useEffect(() => {
+    const handler = (e) => { if (!setContainerRef.current?.contains(e.target)) setSetOpen(false) }
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('touchstart', handler) }
+  }, [])
+
+  // ── Card number autocomplete: filtered by selected set ───────────────────────
+  const cardFetchFn = useCallback((q) => {
+    const extra = {}
+    const currentSetName = selectedSet?.set_name || (setQuery.length >= 2 ? setQuery : null)
+    const currentYear    = selectedYear ? parseInt(selectedYear) : null
+    if (currentSetName) extra.set_name = currentSetName
+    if (currentYear)    extra.year = currentYear
+    return autocomplete(q, 'card_number', extra)
+  }, [selectedSet, setQuery, selectedYear])
+
+  // Selecting from the card number dropdown fills ALL fields immediately
+  function handleCardSelect(s) {
+    setCardNumber(s.card_number)
+    setCardType(s.card_type || 'base')
+    setParallelColor(s.parallel_color || '')
+    if (!selectedSet) {
+      setSetQuery(s.set_name)
+      setSelectedYear(String(s.year))
+    }
+    setPrefill({
+      playerName:    s.player_name,
+      brand:         s.brand || prefill.brand,
+      year:          String(s.year),
+      setName:       s.set_name,
+      cardNumber:    s.card_number,
+      cardType:      s.card_type || 'base',
+      parallelColor: s.parallel_color || '',
+      printRun:      s.print_run ? String(s.print_run) : '',
+      team:          s.team || '',
+    })
+    setFormKey(k => k + 1)
+  }
+
+  function renderCardItem(s) {
+    return (
+      <>
+        <div className="text-white font-medium text-sm">
+          #{s.card_number} — {s.player_name}
+        </div>
+        <div className="text-[#94A3B8] text-xs mt-0.5">
+          {TYPE_LABELS[s.card_type] ?? s.card_type}
+          {s.parallel_color && <span className="text-[#A8DADC] ml-1">· {s.parallel_color}</span>}
+          {s.print_run      && <span className="text-yellow-400 ml-1">· /{s.print_run}</span>}
+        </div>
+      </>
+    )
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────────────
+  async function handleSave(e) {
+    e.preventDefault()
+    const fd  = new FormData(e.target)
+    const get = k => fd.get(k)?.toString().trim() || null
+
+    const playerNameVal = get('player_name')
+    if (!playerNameVal) { setError('Player name is required'); return }
+
+    const yearVal    = parseInt(selectedYear || get('year') || new Date().getFullYear())
+    const setNameVal = selectedSet?.set_name || setQuery || get('set_name') || ''
+    const effectiveType = parallelColor && cardType === 'base' ? 'parallel' : cardType
+
+    const payload = {
+      player_name:      playerNameVal,
+      brand:            get('brand') || 'Upper Deck',
+      year:             yearVal,
+      set_name:         setNameVal,
+      card_number:      cardNumber || get('card_number') || '',
+      team:             get('team') || null,
+      card_type:        effectiveType,
+      parallel_color:   parallelColor || null,
+      print_run:        get('print_run') ? parseInt(get('print_run')) : null,
+      condition:        get('condition') || 'near_mint',
+      notes:            get('notes') || null,
+      sold_date:        get('sold_date') ? new Date(get('sold_date')).toISOString() : null,
+      sold_price:       get('sold_price') ? parseFloat(get('sold_price')) : null,
+      sold_listing_url: get('sold_listing_url') || null,
+    }
+
+    setError(null)
+    try {
+      const { data: existing } = await checkCardExists({
+        set_name:       payload.set_name,
+        card_number:    payload.card_number,
+        parallel_color: payload.parallel_color ?? undefined,
+      })
+      if (existing.length > 0) {
+        setDuplicates(existing)
+        setPendingSave(payload)
+        return
+      }
+    } catch {}
+
+    await doSave(payload)
+  }
+
+  async function doSave(payload) {
+    setSaving(true)
+    setError(null)
+    try {
+      const { data } = await createCard(payload)
+      setSavedCard(data)
+      setDuplicates(null)
+      setPendingSave(null)
+    } catch {
+      setError('Failed to save card. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function resetForm() {
+    setSavedCard(null); setDuplicates(null); setPendingSave(null)
+    setSetQuery(''); setSetOptions([]); setSetOpen(false); setSetActive(-1)
+    setSelectedSet(null); setSelectedYear('')
+    setCardNumber(''); setCardType('base'); setParallelColor('')
+    setShowSoldSection(false)
+    setPrefill({ playerName: '', brand: '', year: '', setName: '', cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' })
+    setError(null)
+    setFormKey(k => k + 1)
+  }
+
+  function addAnother() {
+    // Keep the set from the card just saved; clear everything else
+    setSavedCard(null); setDuplicates(null); setPendingSave(null)
+    setCardNumber(''); setCardType('base'); setParallelColor('')
+    setShowSoldSection(false)
+    setPrefill(p => ({ playerName: '', brand: p.brand, year: p.year, setName: p.setName, cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' }))
+    setError(null)
+    setFormKey(k => k + 1)
+  }
+
+  if (showImport) {
+    return (
+      <div className="pb-24 px-4 pt-6 max-w-lg mx-auto">
+        <button onClick={() => setShowImport(false)} className="text-[#A8DADC] text-sm mb-4 min-h-0">← Back</button>
+        <ImportSetPanel
+          onImported={(result) => { setShowImport(false); setImportResult(result) }}
+          onCancel={() => setShowImport(false)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="pb-24 px-4 pt-6 max-w-lg mx-auto">
+      {importResult && (
+        <UnmatchedReviewModal
+          result={importResult.reconciliation}
+          setName={importResult.set_name}
+          onClose={() => setImportResult(null)}
+        />
+      )}
+
+      <h1 className="text-2xl font-bold text-white mb-1">Add a Card</h1>
+      <p className="text-[#94A3B8] text-sm mb-5">
+        Pick the set, then enter a card number — select a version from the dropdown to auto-fill.
+      </p>
+
+      {savedCard && (
+        <div className="bg-green-900/30 border border-green-500/30 rounded-xl p-4 mb-5">
+          <p className="text-green-400 font-semibold text-sm mb-1">Card saved!</p>
+          <p className="text-[#94A3B8] text-xs mb-4">
+            {savedCard.player_name} · #{savedCard.card_number} · {savedCard.set_name}
+          </p>
+          <div className="flex gap-3">
+            <button type="button" onClick={addAnother}
+              className="flex-1 bg-[#1A2E45] text-white rounded-xl py-2.5 text-sm font-medium">
+              Add Another
+            </button>
+            <button type="button" onClick={() => navigate(`/cards/${savedCard.id}`)}
+              className="flex-1 bg-[#A8DADC] text-[#0D1B2A] rounded-xl py-2.5 text-sm font-semibold">
+              View Card
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-4">
+
+        {/* ── Set / Series ─────────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-[#94A3B8] text-sm mb-1">Set / Series</label>
+          <div ref={setContainerRef} className="relative">
+            <input
+              type="text"
+              value={setQuery}
+              onChange={handleSetInput}
+              onKeyDown={handleSetKeyDown}
+              placeholder="e.g. Flair, Allure, SP"
+              autoComplete="off"
+              className={inputCls}
+            />
+            {selectedSet && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-400 text-lg select-none">✓</span>
+            )}
+            {setOpen && setOptions.length > 0 && (
+              <ul className="absolute z-50 left-0 right-0 mt-1 bg-[#1A2E45] border border-[#A8DADC]/20 rounded-xl overflow-hidden shadow-xl max-h-64 overflow-y-auto">
+                {setOptions.map((s, i) => (
+                  <li
+                    key={s.id}
+                    onMouseDown={() => pickSet(s)}
+                    onTouchStart={() => pickSet(s)}
+                    className={`px-4 py-3 cursor-pointer border-b border-[#0D1B2A] last:border-0 ${i === setActive ? 'bg-[#A8DADC]/20' : 'active:bg-[#A8DADC]/10'}`}
+                  >
+                    <div className="text-white text-sm font-medium">{s.set_name}</div>
+                    <div className="text-[#94A3B8] text-xs mt-0.5">{s.brand} · {s.year} · {s.total_cards} cards</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {setQuery.length >= 2 && setOptions.length === 0 && !setOpen && (
+              <div className="mt-2 bg-yellow-900/30 border border-yellow-500/30 rounded-xl p-3 text-sm">
+                <p className="text-yellow-300 mb-2">No imported set matches "{setQuery}".</p>
+                <button type="button" onClick={() => setShowImport(true)}
+                  className="text-yellow-300 underline text-xs">
+                  Import a set checklist URL →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Card Number ───────────────────────────────────────────────────── */}
+        <AutocompleteInput
+          label="Card Number"
+          field="card_number"
+          value={cardNumber}
+          onChange={setCardNumber}
+          onSelect={handleCardSelect}
+          placeholder="e.g. 42 — pick a version from the list"
+          fetchFn={cardFetchFn}
+          renderItem={renderCardItem}
+        />
+
+        {/* ── Type ─────────────────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-[#94A3B8] text-sm mb-1">Type</label>
+          <select value={cardType} onChange={e => setCardType(e.target.value)} className={selectCls}>
+            {CARD_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+          </select>
+        </div>
+
+        {/* ── Parallel ─────────────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-[#94A3B8] text-sm mb-1">Parallel</label>
+          <input
+            type="text"
+            value={parallelColor}
+            onChange={e => {
+              const val = e.target.value
+              setParallelColor(val)
+              if (val.trim() && cardType === 'base') setCardType('parallel')
+            }}
+            placeholder="e.g. Blue Ice, Gold /99"
+            className={inputCls}
+          />
+        </div>
+
+        {/* ── Card details (keyed individually so only these remount on prefill change) */}
+        <UField key={`player-${formKey}`} label="Player Name *" name="player_name" defaultValue={prefill.playerName} placeholder="e.g. Connor McDavid" />
+        <UField key={`brand-${formKey}`}  label="Brand"         name="brand"       defaultValue={prefill.brand || 'Upper Deck'} />
+        <UField key={`team-${formKey}`}   label="Team"          name="team"        defaultValue={prefill.team} />
+
+        <div key={`condition-${formKey}`}>
+          <label className="block text-[#94A3B8] text-sm mb-1">Condition</label>
+          <select name="condition" defaultValue="near_mint" className={selectCls}>
+            {CONDITIONS.map(c => <option key={c} value={c}>{COND_LABELS[c]}</option>)}
+          </select>
+        </div>
+
+        <UField key={`print-${formKey}`} label="Print Run" name="print_run" defaultValue={prefill.printRun} type="number" placeholder="e.g. 99" />
+        <UField key={`notes-${formKey}`} label="Notes"     name="notes"     multiline />
+
+        {/* ── Recently Sold ─────────────────────────────────────────────────── */}
+        <div className="border-t border-[#1A2E45] pt-4">
+          <button
+            type="button"
+            onClick={() => setShowSoldSection(s => !s)}
+            className="flex items-center gap-2 text-[#94A3B8] hover:text-white text-sm font-medium transition-colors"
+          >
+            <span className={`text-xs transition-transform duration-200 inline-block ${showSoldSection ? 'rotate-90' : ''}`}>▶</span>
+            Recently Sold
+            {!showSoldSection && <span className="text-[#4A6080] text-xs">(optional)</span>}
+          </button>
+
+          {showSoldSection && (
+            <div className="mt-3 space-y-3 bg-[#0D1B2A]/50 rounded-xl p-4">
+              <UField label="Date Sold" name="sold_date" type="date" />
+              <UField label="Sale Price ($)" name="sold_price" type="number" placeholder="e.g. 45.00" />
+              <div>
+                <label className="block text-[#94A3B8] text-sm mb-1">
+                  Listing URL <span className="text-[#4A6080] text-xs">(optional)</span>
+                </label>
+                <input
+                  name="sold_listing_url"
+                  type="url"
+                  placeholder="https://www.ebay.com/itm/…"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+
+        {duplicates && (
+          <div className="bg-yellow-900/30 border border-yellow-500/40 rounded-xl p-4 space-y-3">
+            <p className="text-yellow-300 font-semibold text-sm">This card is already in your collection</p>
+            {duplicates.map(d => (
+              <div key={d.id} className="bg-[#0D1B2A] rounded-lg px-3 py-2 text-sm">
+                <p className="text-white font-medium">{d.player_name}</p>
+                <p className="text-[#94A3B8] text-xs">
+                  #{d.card_number} · {d.set_name}
+                  {d.parallel_color && ` · ${d.parallel_color}`}
+                  {` · Added ${new Date(d.date_added).toLocaleDateString()}`}
+                </p>
+              </div>
+            ))}
+            <div className="flex gap-3 pt-1">
+              <button type="button"
+                onClick={() => { setDuplicates(null); setPendingSave(null) }}
+                className="flex-1 bg-[#1A2E45] text-white rounded-xl py-2.5 text-sm">
+                Cancel
+              </button>
+              <button type="button"
+                onClick={() => doSave(pendingSave)}
+                disabled={saving}
+                className="flex-1 bg-yellow-500/80 text-[#0D1B2A] font-semibold rounded-xl py-2.5 text-sm disabled:opacity-40">
+                {saving ? 'Saving…' : 'Save Anyway'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!duplicates && (
+          <button type="submit" disabled={saving}
+            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold py-3 rounded-xl disabled:opacity-40">
+            {saving ? 'Saving…' : 'Save Card'}
+          </button>
+        )}
+      </form>
+    </div>
+  )
+}
+
+function UField({ label, name, defaultValue = '', placeholder = '', type = 'text', multiline = false }) {
+  const cls = "w-full bg-[#1A2E45] text-white placeholder-[#94A3B8] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC]"
+  return (
+    <div>
+      {label && <label className="block text-[#94A3B8] text-sm mb-1">{label}</label>}
+      {multiline
+        ? <textarea name={name} defaultValue={defaultValue} placeholder={placeholder} rows={3} className={cls + ' resize-none'} />
+        : <input name={name} type={type} defaultValue={defaultValue} placeholder={placeholder} className={cls} />}
+    </div>
+  )
+}
