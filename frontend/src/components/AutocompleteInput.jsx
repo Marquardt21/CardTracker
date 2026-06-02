@@ -1,27 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { autocomplete } from '../api/client'
 
-/**
- * Controlled input with live autocomplete from the local set checklist DB.
- * field:       'player_name' | 'card_number' | 'set_name'
- * fetchFn:     optional (value) => Promise<Suggestion[]> — overrides default autocomplete call
- * renderItem:  optional (suggestion, isActive) => ReactNode — overrides default list row
- * onSelect(suggestion) — called when user picks a result.
- */
-export default function AutocompleteInput({
+const AutocompleteInput = forwardRef(function AutocompleteInput({
   label, field, value, onChange, onSelect, placeholder = '',
   fetchFn = null, renderItem = null,
-}) {
+}, forwardedRef) {
   const [suggestions, setSuggestions] = useState([])
   const [open, setOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
   const [loading, setLoading] = useState(false)
-  const timerRef = useRef(null)
-  const containerRef = useRef(null)
+  const timerRef        = useRef(null)
+  const containerRef    = useRef(null)
+  const justSelectedRef = useRef(false)
 
   useEffect(() => {
     clearTimeout(timerRef.current)
     if (value.length < 1) { setSuggestions([]); setOpen(false); return }
+    if (justSelectedRef.current) { justSelectedRef.current = false; return }
     setLoading(true)
     timerRef.current = setTimeout(async () => {
       try {
@@ -53,6 +48,7 @@ export default function AutocompleteInput({
   }
 
   function pick(s) {
+    justSelectedRef.current = true
     setOpen(false)
     setSuggestions([])
     onSelect(s)
@@ -79,6 +75,7 @@ export default function AutocompleteInput({
     <div ref={containerRef} className="relative">
       {label && <label className="block text-[#94A3B8] text-sm mb-1">{label}</label>}
       <input
+        ref={forwardedRef}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -106,4 +103,6 @@ export default function AutocompleteInput({
       )}
     </div>
   )
-}
+})
+
+export default AutocompleteInput

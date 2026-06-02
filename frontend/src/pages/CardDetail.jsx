@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteCard, generateGrading, getCard, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
+import { deleteCard, generateGrading, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
 import GradingBadge from '../components/GradingBadge'
 import PriceChart from '../components/PriceChart'
 
@@ -32,8 +32,10 @@ export default function CardDetail() {
   const [isSold,       setIsSold]       = useState(false)
   const [soldAmount,   setSoldAmount]   = useState('')
   const [soldDate,     setSoldDate]     = useState('')
-  const [sellingDirty, setSellingDirty] = useState(false)
-  const [sellingSaving,setSellingSaving]= useState(false)
+  const [sellingDirty,  setSellingDirty]  = useState(false)
+  const [sellingSaving, setSellingSaving] = useState(false)
+  const [priceRec,      setPriceRec]      = useState(null)
+  const [priceRecLoading, setPriceRecLoading] = useState(false)
 
   useEffect(() => { fetchAll() }, [id])
 
@@ -128,6 +130,16 @@ export default function CardDetail() {
     finally { setSellingSaving(false) }
   }
 
+  async function handleGetRecommendation() {
+    setPriceRecLoading(true)
+    setPriceRec(null)
+    try {
+      const { data } = await getPriceRecommendation(id)
+      setPriceRec(data)
+    } catch { setPriceRec({ error: 'Failed to get recommendation.' }) }
+    finally { setPriceRecLoading(false) }
+  }
+
   if (loading) return <div className="text-center py-16 text-[#94A3B8]">Loading…</div>
   if (!card)   return <div className="text-center py-16 text-red-400">{error || 'Card not found.'}</div>
 
@@ -204,34 +216,11 @@ export default function CardDetail() {
           title="Toggle grading watchlist">🎯</button>
       </div>
 
-      {/* Price */}
-      {latestValue
-        ? <div className="bg-[#1A2E45] rounded-xl p-4 mb-4 flex justify-between items-center">
-            <div>
-              <p className="text-2xl font-bold text-white">${latestValue.price.toFixed(2)}</p>
-              <p className="text-[#94A3B8] text-xs">{latestValue.source} · {new Date(latestValue.fetched_at).toLocaleDateString()}</p>
-            </div>
-            <button onClick={handleRefreshValue} className="text-[#A8DADC] text-sm border border-[#A8DADC]/30 rounded-xl px-3 py-2 min-h-0">Refresh</button>
-          </div>
-        : <div className="bg-[#1A2E45] rounded-xl p-4 mb-4 flex justify-between items-center">
-            <p className="text-[#94A3B8] text-sm">No value yet</p>
-            <button onClick={handleRefreshValue} className="text-[#A8DADC] text-sm border border-[#A8DADC]/30 rounded-xl px-3 py-2 min-h-0">Fetch Value</button>
-          </div>}
-
-      {/* Price chart */}
-      {values.length > 1 && (
-        <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
-          <p className="text-[#94A3B8] text-xs mb-2">Price History</p>
-          <PriceChart values={[...values].sort((a,b) => new Date(a.fetched_at) - new Date(b.fetched_at))} />
-        </div>
-      )}
-
-      {/* Card fields */}
+      {/* ── Card Info ────────────────────────────────────────────────────── */}
       <div className="bg-[#1A2E45] rounded-xl divide-y divide-[#0D1B2A] mb-4">
         {[
           ['Card #',    card.card_number],
           ['Team',      card.team],
-          ['Position',  card.position],
           ['Type',      TYPE_LABELS[card.card_type]],
           ['Condition', COND_LABELS[card.condition]],
           ['Parallel',  card.parallel_color],
@@ -246,41 +235,63 @@ export default function CardDetail() {
         ))}
       </div>
 
-      {/* Grading section */}
-      {card.grading_watchlist && (
-        <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
-          <p className="text-white font-semibold mb-3">🎯 Grading Analysis</p>
-          {gradingRec ? (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-[#94A3B8]">Raw Value</span>
-                <span className="text-white">${latestValue?.price.toFixed(2) || '—'}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-[#94A3B8]">Est. Graded Value</span>
-                <span className="text-white">${gradingRec.estimated_graded_value.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-[#94A3B8]">Grading Cost</span>
-                <span className="text-white">${gradingRec.grading_cost_estimate}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-[#94A3B8]">Net ROI</span>
-                <span className={gradingRec.roi_estimate > 0 ? 'text-green-400' : 'text-red-400'}>
-                  ${gradingRec.roi_estimate.toFixed(2)}
+      {/* ── eBay Price Data ───────────────────────────────────────────────── */}
+      <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-white font-semibold text-sm">eBay Price Data</p>
+          <button onClick={handleRefreshValue}
+            className="text-[#A8DADC] text-xs border border-[#A8DADC]/30 rounded-lg px-2.5 py-1.5 min-h-0">
+            Refresh
+          </button>
+        </div>
+
+        {values.length === 0 ? (
+          <div className="space-y-1">
+            <p className="text-[#94A3B8] text-sm">No sold data available yet.</p>
+            <p className="text-[#4A6080] text-xs">
+              Sold price lookup requires eBay Marketplace Insights API access.
+              Apply at developer.ebay.com → your app → Marketplace Insights.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Table header */}
+            <div className="grid grid-cols-3 gap-2 px-2 pb-1 border-b border-[#0D1B2A] mb-1">
+              <span className="text-[#94A3B8] text-xs font-medium">Type</span>
+              <span className="text-[#94A3B8] text-xs font-medium text-right">Amount</span>
+              <span className="text-[#94A3B8] text-xs font-medium text-right">Date</span>
+            </div>
+
+            {/* My listed price row */}
+            {card.listed_price && !card.is_sold && (
+              <div className="grid grid-cols-3 gap-2 px-2 py-2 border-b border-[#0D1B2A]/50">
+                <span className="text-yellow-300 text-xs">My Listing</span>
+                <span className="text-yellow-300 text-sm font-semibold text-right">${card.listed_price.toFixed(2)}</span>
+                <span className="text-[#94A3B8] text-xs text-right">
+                  {card.listing_date ? new Date(card.listing_date).toLocaleDateString() : '—'}
                 </span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t border-[#0D1B2A]">
-                <span className="text-[#94A3B8] text-sm">Verdict</span>
-                <GradingBadge verdict={gradingRec.verdict} />
-              </div>
-            </div>
-          ) : (
-            <button onClick={handleGenerateGrading} disabled={gradingLoading || !latestValue}
-              className="w-full bg-[#0D1B2A] text-[#A8DADC] rounded-xl py-2 text-sm disabled:opacity-40">
-              {gradingLoading ? 'Calculating…' : latestValue ? 'Generate Recommendation' : 'Fetch a price first'}
-            </button>
-          )}
+            )}
+
+            {/* eBay sold rows */}
+            {[...values]
+              .sort((a, b) => new Date(b.fetched_at) - new Date(a.fetched_at))
+              .map((v) => (
+                <div key={v.id} className="grid grid-cols-3 gap-2 px-2 py-2 border-b border-[#0D1B2A]/50 last:border-0">
+                  <span className="text-green-400 text-xs">Sold</span>
+                  <span className="text-white text-sm font-medium text-right">${v.price.toFixed(2)}</span>
+                  <span className="text-[#94A3B8] text-xs text-right">{new Date(v.fetched_at).toLocaleDateString()}</span>
+                </div>
+              ))}
+          </>
+        )}
+      </div>
+
+      {/* Price chart */}
+      {values.length > 1 && (
+        <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
+          <p className="text-[#94A3B8] text-xs mb-2">Price History</p>
+          <PriceChart values={[...values].sort((a,b) => new Date(a.fetched_at) - new Date(b.fetched_at))} />
         </div>
       )}
 
@@ -341,9 +352,48 @@ export default function CardDetail() {
           </div>
         )}
 
+        {/* AI price recommendation */}
+        <div className="border-t border-[#0D1B2A] pt-3 mt-1">
+          <button
+            onClick={handleGetRecommendation}
+            disabled={priceRecLoading}
+            className="w-full bg-[#0D1B2A] text-[#A8DADC] border border-[#A8DADC]/30 rounded-xl py-2.5 text-sm font-medium disabled:opacity-40"
+          >
+            {priceRecLoading ? 'Asking AI…' : '✦ Get AI Price Recommendation'}
+          </button>
+
+          {priceRec && !priceRec.error && (
+            <div className="mt-3 bg-[#0D1B2A] rounded-xl p-4 space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[#94A3B8] text-xs">Recommended Price</span>
+                <span className="text-[#A8DADC] text-xl font-bold">${priceRec.recommended_price.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#94A3B8] text-xs">Range</span>
+                <span className="text-white text-sm">${priceRec.price_range_low.toFixed(2)} – ${priceRec.price_range_high.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#94A3B8] text-xs">Confidence</span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  priceRec.confidence === 'high'   ? 'bg-green-900/40 text-green-400' :
+                  priceRec.confidence === 'medium' ? 'bg-yellow-900/40 text-yellow-300' :
+                                                      'bg-red-900/40 text-red-400'
+                }`}>{priceRec.confidence}</span>
+              </div>
+              <p className="text-[#94A3B8] text-xs pt-1 border-t border-[#1A2E45] leading-relaxed">
+                {priceRec.reasoning}
+              </p>
+            </div>
+          )}
+
+          {priceRec?.error && (
+            <p className="text-red-400 text-xs mt-2 text-center">{priceRec.error}</p>
+          )}
+        </div>
+
         {sellingDirty && (
           <button onClick={handleSaveSelling} disabled={sellingSaving}
-            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm disabled:opacity-40">
+            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm disabled:opacity-40 mt-3">
             {sellingSaving ? 'Saving…' : 'Save Selling Info'}
           </button>
         )}
@@ -356,6 +406,44 @@ export default function CardDetail() {
             : <p className="text-[#4A6080] text-xs text-center">Not listed</p>
         )}
       </div>
+
+      {/* Grading section */}
+      {card.grading_watchlist && (
+        <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
+          <p className="text-white font-semibold mb-3">🎯 Grading Analysis</p>
+          {gradingRec ? (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-[#94A3B8]">Raw Value</span>
+                <span className="text-white">${latestValue?.price.toFixed(2) || '—'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[#94A3B8]">Est. Graded Value</span>
+                <span className="text-white">${gradingRec.estimated_graded_value.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[#94A3B8]">Grading Cost</span>
+                <span className="text-white">${gradingRec.grading_cost_estimate}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[#94A3B8]">Net ROI</span>
+                <span className={gradingRec.roi_estimate > 0 ? 'text-green-400' : 'text-red-400'}>
+                  ${gradingRec.roi_estimate.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-[#0D1B2A]">
+                <span className="text-[#94A3B8] text-sm">Verdict</span>
+                <GradingBadge verdict={gradingRec.verdict} />
+              </div>
+            </div>
+          ) : (
+            <button onClick={handleGenerateGrading} disabled={gradingLoading || !latestValue}
+              className="w-full bg-[#0D1B2A] text-[#A8DADC] rounded-xl py-2 text-sm disabled:opacity-40">
+              {gradingLoading ? 'Calculating…' : latestValue ? 'Generate Recommendation' : 'Fetch a price first'}
+            </button>
+          )}
+        </div>
+      )}
 
       {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
 
@@ -378,6 +466,10 @@ export default function CardDetail() {
       </div>
     </div>
   )
+}
+
+function priceLabel(v) {
+  return `Sold ${new Date(v.fetched_at).toLocaleDateString()}`
 }
 
 const inp = "w-full bg-[#0D1B2A] text-white placeholder-[#94A3B8] rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#A8DADC] text-sm"

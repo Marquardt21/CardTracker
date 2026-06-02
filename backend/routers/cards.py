@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -64,13 +64,15 @@ def list_cards(
 
 
 @router.post("", response_model=CardOut, status_code=201)
-def create_card(card: CardCreate, db: Session = Depends(get_db)):
+def create_card(card: CardCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     from backend.services.set_import_service import match_card_to_checklists
+    from backend.services.price_service import fetch_sold_history_bg
     db_card = Card(**card.model_dump())
     db.add(db_card)
     db.commit()
     db.refresh(db_card)
     match_card_to_checklists(db, db_card)
+    background_tasks.add_task(fetch_sold_history_bg, db_card.id)
     return db_card
 
 
@@ -150,6 +152,23 @@ async def upload_photo(card_id: int, photo: UploadFile = File(...), db: Session 
     db.commit()
     db.refresh(card)
     return card
+
+
+@router.post("/{card_id}/price-recommendation")
+async def get_price_recommendation(card_id: int, db: Session = Depends(get_db)):
+    from backend.models import CardValue
+    from backend.services.recommendation_service import generate_price_recommendation
+    card = db.query(Card).filter(Card.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    sold_values = (
+        db.query(CardValue)
+        .filter(CardValue.card_id == card_id)
+        .order_by(CardValue.fetched_at.desc())
+        .limit(10)
+        .all()
+    )
+    return await generate_price_recommendation(card, sold_values)
 
 
 @router.patch("/{card_id}/watchlist", response_model=CardOut)

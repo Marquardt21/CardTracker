@@ -35,8 +35,9 @@ export default function AddCard() {
   const [setOpen,         setSetOpen]         = useState(false)
   const [setActive,       setSetActive]       = useState(-1)
   const [selectedSet,     setSelectedSet]     = useState(null)
-  const setTimerRef     = useRef(null)
-  const setContainerRef = useRef(null)
+  const setTimerRef      = useRef(null)
+  const setContainerRef  = useRef(null)
+  const cardNumberRef    = useRef(null)
   const [selectedYear,    setSelectedYear]    = useState(prefillFromUrl.year || '')
 
   // ── Step 2: Card number + variant selection ─────────────────────────────────
@@ -97,6 +98,7 @@ export default function AddCard() {
     setCardNumber('')
     setCardType('base')
     setParallelColor('')
+    setTimeout(() => cardNumberRef.current?.focus(), 0)
   }
 
   useEffect(() => {
@@ -235,6 +237,7 @@ export default function AddCard() {
     setPrefill(p => ({ playerName: '', brand: p.brand, year: p.year, setName: p.setName, cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' }))
     setError(null)
     setFormKey(k => k + 1)
+    setTimeout(() => cardNumberRef.current?.focus(), 0)
   }
 
   if (showImport) {
@@ -330,6 +333,7 @@ export default function AddCard() {
 
         {/* ── Card Number ───────────────────────────────────────────────────── */}
         <AutocompleteInput
+          ref={cardNumberRef}
           label="Card Number"
           field="card_number"
           value={cardNumber}

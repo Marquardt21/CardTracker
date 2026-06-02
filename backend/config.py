@@ -13,7 +13,8 @@ PHOTOS_DIR.mkdir(exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DATA_DIR / 'cards.db'}"
 
-EBAY_APP_ID = os.getenv("EBAY_APP_ID", "")
+EBAY_APP_ID  = os.getenv("EBAY_APP_ID", "")
+EBAY_CERT_ID = os.getenv("EBAY_CERT_ID", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 GRADING_COSTS = {
