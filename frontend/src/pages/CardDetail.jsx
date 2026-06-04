@@ -34,6 +34,7 @@ export default function CardDetail() {
   const [soldDate,     setSoldDate]     = useState('')
   const [sellingDirty,  setSellingDirty]  = useState(false)
   const [sellingSaving, setSellingSaving] = useState(false)
+  const [ebayFeeRate,   setEbayFeeRate]   = useState('13.25')
   const [priceRec,      setPriceRec]      = useState(null)
   const [priceRecLoading, setPriceRecLoading] = useState(false)
 
@@ -47,11 +48,12 @@ export default function CardDetail() {
       // Seed selling state from card data
       setIsSelling(c.is_selling || false)
       setListedPrice(c.listed_price != null ? String(c.listed_price) : '')
-      setListingDate(c.listing_date ? c.listing_date.split('T')[0] : '')
+      const today = localDateStr(new Date())
+      setListingDate(c.listing_date ? c.listing_date.split('T')[0] : today)
       setListingUrl(c.listing_url || '')
       setIsSold(c.is_sold || false)
       setSoldAmount(c.sold_price != null ? String(c.sold_price) : '')
-      setSoldDate(c.sold_date ? c.sold_date.split('T')[0] : '')
+      setSoldDate(c.sold_date ? c.sold_date.split('T')[0] : today)
       setSellingDirty(false)
     } catch { setError('Card not found.') }
     finally { setLoading(false) }
@@ -299,16 +301,18 @@ export default function CardDetail() {
       <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
         <p className="text-white font-semibold mb-3">🏷️ Selling</p>
 
-        {/* For Sale toggle */}
+        {/* ── For Sale ──────────────────────────────────────────────────── */}
         <label className="flex items-center gap-3 cursor-pointer mb-3">
-          <input type="checkbox" checked={isSelling} onChange={e => { setIsSelling(e.target.checked); if (!e.target.checked) { setIsSold(false) } setSellingDirty(true) }}
-            className="w-5 h-5 rounded accent-[#A8DADC] cursor-pointer" />
+          <input type="checkbox" checked={isSelling} onChange={e => {
+            setIsSelling(e.target.checked)
+            if (!e.target.checked) setIsSold(false)
+            setSellingDirty(true)
+          }} className="w-5 h-5 rounded accent-[#A8DADC] cursor-pointer" />
           <span className="text-white text-sm font-medium">For Sale</span>
         </label>
 
-        {/* Listing fields */}
-        {isSelling && !isSold && (
-          <div className="space-y-3 pl-8 mb-3">
+        {isSelling && (
+          <div className="space-y-3 pl-8 mb-4">
             <Field label="Listed Price ($)">
               <input type="number" min="0" step="0.01" value={listedPrice}
                 onChange={e => { setListedPrice(e.target.value); setSellingDirty(true) }}
@@ -327,45 +331,16 @@ export default function CardDetail() {
           </div>
         )}
 
-        {/* Sold toggle — only visible once For Sale is checked */}
-        {isSelling && (
-          <label className="flex items-center gap-3 cursor-pointer mb-3">
-            <input type="checkbox" checked={isSold} onChange={e => { setIsSold(e.target.checked); setSellingDirty(true) }}
-              className="w-5 h-5 rounded accent-[#A8DADC] cursor-pointer" />
-            <span className="text-white text-sm font-medium">Sold</span>
-          </label>
-        )}
-
-        {/* Sold fields */}
-        {isSold && (
-          <div className="space-y-3 pl-8 mb-3">
-            <Field label="Sold Amount ($)">
-              <input type="number" min="0" step="0.01" value={soldAmount}
-                onChange={e => { setSoldAmount(e.target.value); setSellingDirty(true) }}
-                placeholder="e.g. 62.00" className={inp} />
-            </Field>
-            <Field label="Sold Date">
-              <input type="date" value={soldDate}
-                onChange={e => { setSoldDate(e.target.value); setSellingDirty(true) }}
-                className={inp} />
-            </Field>
-          </div>
-        )}
-
-        {/* AI price recommendation */}
-        <div className="border-t border-[#0D1B2A] pt-3 mt-1">
-          <button
-            onClick={handleGetRecommendation}
-            disabled={priceRecLoading}
-            className="w-full bg-[#0D1B2A] text-[#A8DADC] border border-[#A8DADC]/30 rounded-xl py-2.5 text-sm font-medium disabled:opacity-40"
-          >
+        {/* ── AI recommendation ──────────────────────────────────────────── */}
+        <div className="mb-4">
+          <button onClick={handleGetRecommendation} disabled={priceRecLoading}
+            className="w-full bg-[#0D1B2A] text-[#A8DADC] border border-[#A8DADC]/30 rounded-xl py-2.5 text-sm font-medium disabled:opacity-40">
             {priceRecLoading ? 'Asking AI…' : '✦ Get AI Price Recommendation'}
           </button>
-
           {priceRec && !priceRec.error && (
             <div className="mt-3 bg-[#0D1B2A] rounded-xl p-4 space-y-2">
               <div className="flex items-baseline justify-between">
-                <span className="text-[#94A3B8] text-xs">Recommended Price</span>
+                <span className="text-[#94A3B8] text-xs">Recommended</span>
                 <span className="text-[#A8DADC] text-xl font-bold">${priceRec.recommended_price.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -380,30 +355,89 @@ export default function CardDetail() {
                                                       'bg-red-900/40 text-red-400'
                 }`}>{priceRec.confidence}</span>
               </div>
-              <p className="text-[#94A3B8] text-xs pt-1 border-t border-[#1A2E45] leading-relaxed">
-                {priceRec.reasoning}
-              </p>
+              <p className="text-[#94A3B8] text-xs pt-2 border-t border-[#1A2E45] leading-relaxed">{priceRec.reasoning}</p>
             </div>
           )}
+          {priceRec?.error && <p className="text-red-400 text-xs mt-2 text-center">{priceRec.error}</p>}
+        </div>
 
-          {priceRec?.error && (
-            <p className="text-red-400 text-xs mt-2 text-center">{priceRec.error}</p>
-          )}
+        {/* ── Sold ──────────────────────────────────────────────────────── */}
+        <div className="border-t border-[#0D1B2A] pt-3">
+          <label className="flex items-center gap-3 cursor-pointer mb-3">
+            <input type="checkbox" checked={isSold} onChange={e => {
+              setIsSold(e.target.checked)
+              if (e.target.checked && !isSelling) setIsSelling(true)
+              setSellingDirty(true)
+            }} className="w-5 h-5 rounded accent-green-400 cursor-pointer" />
+            <span className="text-white text-sm font-medium">Sold</span>
+          </label>
+
+          {isSold && (() => {
+            const soldNum  = parseFloat(soldAmount) || 0
+            const feeRate  = parseFloat(ebayFeeRate) || 0
+            const feeAmt   = (soldNum * feeRate / 100) + 0.30
+            const profit   = soldNum - feeAmt
+            return (
+              <div className="pl-8 space-y-3">
+                <Field label="Sold Amount ($)">
+                  <input type="number" min="0" step="0.01" value={soldAmount}
+                    onChange={e => { setSoldAmount(e.target.value); setSellingDirty(true) }}
+                    placeholder="e.g. 62.00" className={inp} />
+                </Field>
+                <Field label="Sold Date">
+                  <input type="date" value={soldDate}
+                    onChange={e => { setSoldDate(e.target.value); setSellingDirty(true) }}
+                    className={inp} />
+                </Field>
+
+                {soldNum > 0 && (
+                  <div className="bg-[#0D1B2A] rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#94A3B8] text-xs">Sold Amount</span>
+                      <span className="text-white text-sm">${soldNum.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#94A3B8] text-xs whitespace-nowrap">eBay Fee</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number" min="0" max="100" step="0.01"
+                          value={ebayFeeRate}
+                          onChange={e => setEbayFeeRate(e.target.value)}
+                          className="w-16 bg-[#1A2E45] text-white text-xs rounded-lg px-2 py-1 outline-none text-right"
+                        />
+                        <span className="text-[#94A3B8] text-xs">% + $0.30</span>
+                        <span className="text-red-400 text-sm ml-1">-${feeAmt.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-[#1A2E45] pt-2">
+                      <span className="text-white text-sm font-medium">Net Profit</span>
+                      <span className={`text-sm font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {sellingDirty && (
           <button onClick={handleSaveSelling} disabled={sellingSaving}
-            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm disabled:opacity-40 mt-3">
-            {sellingSaving ? 'Saving…' : 'Save Selling Info'}
+            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm disabled:opacity-40 mt-4">
+            {sellingSaving ? 'Saving…' : 'Save'}
           </button>
         )}
 
-        {/* Status badge when saved and clean */}
-        {!sellingDirty && (card.is_sold
-          ? <p className="text-green-400 text-xs text-center">✓ Sold{card.sold_price ? ` · $${card.sold_price.toFixed(2)}` : ''}{card.sold_date ? ` on ${new Date(card.sold_date).toLocaleDateString()}` : ''}</p>
-          : card.is_selling
-            ? <p className="text-yellow-300 text-xs text-center">Listed{card.listed_price ? ` · $${card.listed_price.toFixed(2)}` : ''}{card.listing_url ? <> · <a href={card.listing_url} target="_blank" rel="noreferrer" className="underline">View listing</a></> : null}</p>
-            : <p className="text-[#4A6080] text-xs text-center">Not listed</p>
+        {!sellingDirty && (
+          <p className="text-xs text-center mt-2">
+            {card.is_sold
+              ? <span className="text-green-400">✓ Sold{card.sold_price ? ` · $${card.sold_price.toFixed(2)}` : ''}{card.sold_date ? ` on ${new Date(card.sold_date).toLocaleDateString()}` : ''}</span>
+              : card.is_selling
+                ? <span className="text-yellow-300">Listed{card.listed_price ? ` · $${card.listed_price.toFixed(2)}` : ''}</span>
+                : <span className="text-[#4A6080]">Not listed</span>
+            }
+          </p>
         )}
       </div>
 
@@ -466,6 +500,10 @@ export default function CardDetail() {
       </div>
     </div>
   )
+}
+
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function priceLabel(v) {

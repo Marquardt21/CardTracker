@@ -397,7 +397,7 @@ export default function AddCard() {
 
           {showSoldSection && (
             <div className="mt-3 space-y-3 bg-[#0D1B2A]/50 rounded-xl p-4">
-              <UField label="Date Sold" name="sold_date" type="date" />
+              <UField label="Date Sold" name="sold_date" type="date" defaultValue={(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()} />
               <UField label="Sale Price ($)" name="sold_price" type="number" placeholder="e.g. 45.00" />
               <div>
                 <label className="block text-[#94A3B8] text-sm mb-1">
