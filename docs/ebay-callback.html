@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CardTracker – eBay Authorization</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: sans-serif; background: #0D1B2A; color: #fff;
+           display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .box { text-align: center; padding: 2rem; }
+    p { color: #94A3B8; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Authorizing CardTracker…</h2>
+    <p>Redirecting back to your local app.</p>
+  </div>
+  <script>
+    // Forward the full query string (code, expires_in, etc.) back to the local server.
+    const qs = window.location.search;
+    if (qs) {
+      window.location.replace('http://localhost:8000/api/ebay/auth/callback' + qs);
+    } else {
+      document.querySelector('p').textContent = 'No authorization code received.';
+    }
+  </script>
+</body>
+</html>
