@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from backend.config import PHOTOS_DIR
 from backend.database import Base, engine
-from backend.routers import alerts, autocomplete, cards, dashboard, grading, selling, sets, settings, values
+from backend.routers import alerts, autocomplete, cards, dashboard, ebay, grading, selling, sets, settings, values
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,6 +55,7 @@ app.include_router(dashboard.router)
 app.include_router(selling.router)
 app.include_router(alerts.router)
 app.include_router(settings.router)
+app.include_router(ebay.router)
 
 
 @app.on_event("startup")

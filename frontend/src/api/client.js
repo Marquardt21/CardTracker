@@ -46,3 +46,10 @@ export const getDashboard  = () => client.get('/dashboard')
 export const getAlerts     = () => client.get('/alerts')
 export const getSettings   = () => client.get('/settings')
 export const exportCsv     = () => client.get('/export/csv', { responseType: 'blob' })
+
+// eBay
+export const getEbayAuthStatus  = () => client.get('/ebay/auth/status')
+export const storeEbayUserToken = (token) => client.post('/ebay/auth/user-token', { token })
+export const disconnectEbay     = () => client.delete('/ebay/auth/token')
+export const createEbayDraft    = (d) => client.post('/ebay/listings/draft', d)
+export const getEbayDrafts      = () => client.get('/ebay/listings')

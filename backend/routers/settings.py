@@ -8,6 +8,7 @@ from backend.config import (
     EBAY_APP_ID, ANTHROPIC_API_KEY,
     GRADING_COSTS, GRADING_MULTIPLIERS, PRICE_SPIKE_THRESHOLD,
     GRADING_ROI_WORTH_IT, GRADING_ROI_BORDERLINE,
+    EBAY_PLACEHOLDER_IMAGE_URL,
 )
 from backend.database import get_db
 from backend.models import Card
@@ -29,6 +30,7 @@ def get_settings():
         },
         "grading_costs": GRADING_COSTS,
         "grading_multipliers": GRADING_MULTIPLIERS,
+        "ebay_placeholder_image_url": EBAY_PLACEHOLDER_IMAGE_URL,
     }
 
 

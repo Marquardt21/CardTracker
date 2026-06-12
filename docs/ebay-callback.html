@@ -4,24 +4,80 @@
   <title>CardTracker – eBay Authorization</title>
   <meta charset="utf-8">
   <style>
+    * { box-sizing: border-box; }
     body { font-family: sans-serif; background: #0D1B2A; color: #fff;
-           display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-    .box { text-align: center; padding: 2rem; }
+           display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; margin: 0; padding: 1rem; }
+    .box { text-align: center; padding: 2rem; max-width: 480px; width: 100%; }
     p { color: #94A3B8; }
+    #code-block { display: none; margin-top: 1.5rem; }
+    #code-value {
+      background: #1A2E45; border-radius: 8px; padding: 0.75rem 1rem;
+      font-family: monospace; font-size: 0.85rem; word-break: break-all;
+      color: #A8DADC; margin: 0.75rem 0; text-align: left;
+    }
+    button {
+      background: #A8DADC; color: #0D1B2A; font-weight: 600;
+      border: none; border-radius: 10px; padding: 0.75rem 1.5rem;
+      cursor: pointer; font-size: 1rem; width: 100%; margin-top: 0.5rem;
+    }
+    #status { color: #4ade80; margin-top: 1rem; display: none; }
+    #error  { color: #f87171; margin-top: 1rem; display: none; }
   </style>
 </head>
 <body>
   <div class="box">
-    <h2>Authorizing CardTracker…</h2>
-    <p>Redirecting back to your local app.</p>
+    <h2 id="title">Authorizing CardTracker…</h2>
+    <p id="subtitle">Trying to connect automatically…</p>
+
+    <div id="code-block">
+      <p>Copy this code and paste it into <strong style="color:#fff">Settings → eBay Account</strong> in CardTracker:</p>
+      <div id="code-value"></div>
+      <button onclick="copyCode()">Copy Code</button>
+      <p id="status">Copied!</p>
+    </div>
+    <p id="error"></p>
   </div>
+
   <script>
-    // Forward the full query string (code, expires_in, etc.) back to the local server.
-    const qs = window.location.search;
-    if (qs) {
-      window.location.replace('http://localhost:8000/api/ebay/auth/callback' + qs);
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get('code');
+    const error  = params.get('error');
+
+    if (error) {
+      document.getElementById('title').textContent    = 'Authorization Failed';
+      document.getElementById('subtitle').textContent = params.get('error_description') || 'eBay declined the request.';
+      document.getElementById('error').style.display  = 'block';
+      document.getElementById('error').textContent    = 'You can close this tab and try again from Settings.';
+    } else if (code) {
+      // Always show the code so the user can paste it manually as a fallback.
+      document.getElementById('code-value').textContent = code;
+      document.getElementById('code-block').style.display = 'block';
+
+      // Also attempt the automatic redirect — works if the browser allows HTTP from HTTPS.
+      fetch('http://localhost:8000/api/ebay/auth/callback?code=' + encodeURIComponent(code))
+        .then(r => {
+          if (r.ok) {
+            document.getElementById('title').textContent    = 'eBay Connected!';
+            document.getElementById('subtitle').textContent = 'Your account was linked automatically. You can close this tab.';
+            document.getElementById('code-block').style.display = 'none';
+          }
+        })
+        .catch(() => {
+          // Mixed-content block — user must paste the code manually.
+          document.getElementById('title').textContent    = 'Almost there!';
+          document.getElementById('subtitle').textContent = 'Auto-connect was blocked by your browser. Paste the code below into CardTracker.';
+        });
     } else {
-      document.querySelector('p').textContent = 'No authorization code received.';
+      document.getElementById('subtitle').textContent = 'No authorization code received.';
+    }
+
+    function copyCode() {
+      const code = document.getElementById('code-value').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        document.getElementById('status').style.display = 'block';
+        setTimeout(() => document.getElementById('status').style.display = 'none', 2000);
+      });
     }
   </script>
 </body>

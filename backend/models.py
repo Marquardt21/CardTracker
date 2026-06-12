@@ -91,6 +91,45 @@ class SetChecklistCard(Base):
     __table_args__ = (Index("ix_set_checklist_cards_lookup", "set_id", "card_number"),)
 
 
+class EbayToken(Base):
+    __tablename__ = "ebay_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EbayDraftListing(Base):
+    __tablename__ = "ebay_draft_listings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ebay_draft_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    ebay_draft_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    cards: Mapped[list["DraftListingCard"]] = relationship(
+        "DraftListingCard", back_populates="listing", cascade="all, delete-orphan"
+    )
+
+
+class DraftListingCard(Base):
+    __tablename__ = "draft_listing_cards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    draft_id: Mapped[int] = mapped_column(Integer, ForeignKey("ebay_draft_listings.id"), nullable=False)
+    card_id: Mapped[int] = mapped_column(Integer, ForeignKey("cards.id"), nullable=False)
+
+    listing: Mapped["EbayDraftListing"] = relationship("EbayDraftListing", back_populates="cards")
+    card: Mapped["Card"] = relationship("Card")
+
+
 class GradingRecommendation(Base):
     __tablename__ = "grading_recommendations"
 

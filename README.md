@@ -23,7 +23,7 @@ Then open your iPad browser and navigate to `http://<your-ubuntu-ip>:3000`.
 sudo apt update
 sudo apt install -y python3 python3-pip python3-venv nodejs npm
 ```
-
+c
 ### 2. Clone / copy the project
 
 Place the `CardTracker` folder in `~/Desktop/CardTracker`.
@@ -35,9 +35,7 @@ cp .env.example .env
 nano .env
 ```
 
-Fill in your API keys (optional — app works without them, price lookups just won't work):
-
-```
+Fill in your API keys (optional — app works without them, price lookups just won't 
 EBAY_APP_ID=your_ebay_app_id_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
