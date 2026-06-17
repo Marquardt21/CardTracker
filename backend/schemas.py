@@ -203,13 +203,32 @@ class SellingUpdate(BaseModel):
     sold_date: datetime | None = None
 
 
+class SellingGroupOut(BaseModel):
+    """A listed/sold unit on the selling page: a single card or a multi-card lot."""
+    kind: str               # "listing" (eBay lot/single) or "card" (manual, no listing)
+    ref_id: int             # listing id when kind == "listing", else card id
+    title: str
+    is_lot: bool
+    price: float | None     # listing price (lots) or card listed_price
+    url: str | None
+    listing_date: datetime | None = None
+    sold_price: float | None = None
+    sold_date: datetime | None = None
+    cards: list[CardOut]
+
+
+class ListingSoldUpdate(BaseModel):
+    sold_price: float | None = None
+    sold_date: datetime | None = None
+
+
 class SellingDashboardOut(BaseModel):
     listed_count: int
     sold_count: int
     listed_value: float
     sold_value: float
-    listed_cards: list[CardOut]
-    sold_cards: list[CardOut]
+    listed_groups: list[SellingGroupOut]
+    sold_groups: list[SellingGroupOut]
 
 
 # Alerts

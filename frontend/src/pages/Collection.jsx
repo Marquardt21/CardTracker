@@ -45,6 +45,7 @@ export default function Collection() {
 
   function handleCardClick(card) {
     if (selectMode) {
+      if (card.is_selling || card.is_sold) return  // can't relist listed/sold cards
       setSelectedIds(prev => {
         const next = new Set(prev)
         next.has(card.id) ? next.delete(card.id) : next.add(card.id)
@@ -108,15 +109,18 @@ export default function Collection() {
       <ul className="space-y-3">
         {cards.map(card => {
           const isSelected = selectedIds.has(card.id)
+          const unlistable = card.is_selling || card.is_sold
           return (
             <li key={card.id}
               onClick={() => handleCardClick(card)}
               className={`bg-[#1A2E45] rounded-xl p-4 flex items-center gap-3 active:opacity-75 cursor-pointer transition-all
-                ${selectMode && isSelected ? 'ring-2 ring-[#A8DADC]' : ''}`}
+                ${selectMode && isSelected ? 'ring-2 ring-[#A8DADC]' : ''}
+                ${selectMode && unlistable ? 'opacity-40' : ''}`}
             >
               {selectMode && (
                 <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center
-                  ${isSelected ? 'bg-[#A8DADC] border-[#A8DADC]' : 'border-[#4A6080]'}`}>
+                  ${unlistable ? 'border-[#2A3E55] bg-transparent'
+                    : isSelected ? 'bg-[#A8DADC] border-[#A8DADC]' : 'border-[#4A6080]'}`}>
                   {isSelected && <span className="text-[#0D1B2A] text-xs font-bold">✓</span>}
                 </div>
               )}
@@ -133,6 +137,8 @@ export default function Collection() {
                   <span className="text-xs bg-[#0D1B2A] text-[#94A3B8] px-2 py-0.5 rounded-full">{COND_LABELS[card.condition]}</span>
                   {card.parallel_color && <span className="text-xs bg-[#0D1B2A] text-yellow-400 px-2 py-0.5 rounded-full">{card.parallel_color}</span>}
                   {!card.checklist_matched && <span className="text-xs bg-yellow-900/40 text-yellow-400 px-2 py-0.5 rounded-full">Unmatched</span>}
+                  {card.is_sold && <span className="text-xs bg-green-900/40 text-green-400 px-2 py-0.5 rounded-full">Sold</span>}
+                  {card.is_selling && !card.is_sold && <span className="text-xs bg-yellow-900/40 text-yellow-300 px-2 py-0.5 rounded-full">Listed</span>}
                 </div>
               </div>
               {!selectMode && (

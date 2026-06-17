@@ -30,6 +30,14 @@ def _run_migrations():
         for col, sql in new_cols:
             if col not in existing:
                 conn.execute(text(sql))
+
+        listing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ebay_draft_listings)"))}
+        for col, sql in [
+            ("sold_price", "ALTER TABLE ebay_draft_listings ADD COLUMN sold_price FLOAT"),
+            ("sold_date",  "ALTER TABLE ebay_draft_listings ADD COLUMN sold_date DATETIME"),
+        ]:
+            if listing_cols and col not in listing_cols:
+                conn.execute(text(sql))
         conn.commit()
 
 

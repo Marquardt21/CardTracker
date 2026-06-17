@@ -13,6 +13,7 @@ export const deleteCard    = (id) => client.delete(`/cards/${id}`)
 export const toggleWatchlist      = (id) => client.patch(`/cards/${id}/watchlist`)
 export const getPriceRecommendation = (id) => client.post(`/cards/${id}/price-recommendation`)
 export const updateSelling    = (id, d) => client.patch(`/selling/${id}`, d)
+export const markListingSold  = (listingId, d) => client.patch(`/selling/listing/${listingId}/sold`, d)
 export const getSellingDashboard = () => client.get('/selling/dashboard')
 export const uploadPhoto   = (id, file) => {
   const form = new FormData()

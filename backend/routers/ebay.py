@@ -103,7 +103,10 @@ def store_user_token(req: UserTokenRequest, db: Session = Depends(get_db)):
     token_str = req.token.strip()
     if not token_str:
         raise HTTPException(status_code=400, detail="Token is required")
-    ebay_sell_service.store_user_token(token_str, db)
+    try:
+        ebay_sell_service.store_user_token(token_str, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return {"connected": True}
 
 

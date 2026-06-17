@@ -113,6 +113,8 @@ class EbayDraftListing(Base):
     price: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    sold_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sold_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     cards: Mapped[list["DraftListingCard"]] = relationship(
         "DraftListingCard", back_populates="listing", cascade="all, delete-orphan"

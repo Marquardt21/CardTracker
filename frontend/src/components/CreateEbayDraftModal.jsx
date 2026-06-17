@@ -73,6 +73,7 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
     e.preventDefault()
     const p = parseFloat(price)
     if (!p || p <= 0) { setError('Enter a valid price.'); return }
+    if (!photoUrl.trim()) { setError('A photo URL is required by eBay. Paste an Imgur or GitHub raw link.'); return }
     setLoading(true)
     setError(null)
     try {
