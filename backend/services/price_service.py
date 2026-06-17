@@ -137,6 +137,36 @@ async def fetch_market_price(card: Card) -> float | None:
     return None
 
 
+async def fetch_active_listings(card: Card, limit: int = 10) -> list[dict]:
+    """
+    Return current active eBay BIN listings for a card (title, price, web URL,
+    condition, image) so the user can click through and verify. Live data, not
+    stored. Graded slabs are excluded.
+
+    Accumulates across queries most-specific → broadest (deduped by listing URL)
+    until `limit` is reached, so a narrow exact-match query that returns only a
+    couple of results still gets topped up with broader matches for the same card.
+    """
+    token = await _get_oauth_token()
+    if not token:
+        return []
+
+    seen: set[str] = set()
+    out: list[dict] = []
+    for query in _build_queries(card):
+        for item in await _browse_active_listings(query, limit, token):
+            key = item.get("url") or f"{item['title']}|{item['price']}"
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+            if len(out) >= limit:
+                logger.info("Browse active: %d listings for card %s", len(out), card.id)
+                return out
+    logger.info("Browse active: %d listings for card %s", len(out), card.id)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # OAuth token
 # ---------------------------------------------------------------------------
@@ -320,6 +350,52 @@ async def _call_130point(query: str, limit: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Browse API (OAuth — active BIN listings as market-price proxy)
 # ---------------------------------------------------------------------------
+
+async def _browse_active_listings(query: str, limit: int, token: str) -> list[dict]:
+    """Active fixed-price listings with the buyer-facing URL for click-through."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                EBAY_BROWSE_URL,
+                headers={"Authorization": f"Bearer {token}",
+                         "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
+                params={
+                    "q":      query,
+                    "filter": "buyingOptions:{FIXED_PRICE}",
+                    "sort":   "price",
+                    "limit":  str(min(limit * 2, 50)),
+                },
+            )
+        if resp.status_code == 401:
+            _token_cache["token"] = None
+            return []
+        if resp.status_code != 200:
+            logger.warning("Browse API (active) %s: %s", resp.status_code, resp.text[:200])
+            return []
+
+        results = []
+        for item in resp.json().get("itemSummaries", []):
+            title = item.get("title", "")
+            if _is_graded(title.lower()):
+                continue
+            try:
+                price = float(item["price"]["value"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            results.append({
+                "title":     title,
+                "price":     round(price, 2),
+                "url":       item.get("itemWebUrl"),
+                "condition": item.get("condition"),
+                "image_url": (item.get("image") or {}).get("imageUrl"),
+            })
+            if len(results) >= limit:
+                break
+        return results
+    except Exception as exc:
+        logger.warning("Browse API (active) error: %s", exc)
+        return []
+
 
 async def _call_browse_api(query: str, limit: int, token: str) -> list[dict]:
     try:

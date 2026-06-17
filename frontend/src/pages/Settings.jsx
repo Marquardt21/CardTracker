@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { disconnectEbay, exportCsv, getEbayAuthStatus, getSettings, storeEbayUserToken } from '../api/client'
+import { useEffect, useRef, useState } from 'react'
+import { disconnectEbay, exportCsv, getEbayAuthStatus, getRefreshAllStatus, getSettings, refreshAllValues, storeEbayUserToken } from '../api/client'
 
 export default function Settings() {
   const [settings, setSettings]           = useState(null)
@@ -8,11 +8,33 @@ export default function Settings() {
   const [tokenValue, setTokenValue]       = useState('')
   const [tokenError, setTokenError]       = useState(null)
   const [tokenSaving, setTokenSaving]     = useState(false)
+  const [refresh, setRefresh]             = useState(null)   // {running,total,done,refreshed,finished_at}
+  const pollRef = useRef(null)
 
   useEffect(() => {
     getSettings().then(r => setSettings(r.data)).catch(() => {})
     getEbayAuthStatus().then(r => setEbayConnected(r.data.connected)).catch(() => setEbayConnected(false))
+    // Resume showing progress if a refresh is already running (e.g. after navigating away)
+    getRefreshAllStatus().then(r => { if (r.data.running) { setRefresh(r.data); startPolling() } }).catch(() => {})
+    return () => clearInterval(pollRef.current)
   }, [])
+
+  function startPolling() {
+    clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const { data } = await getRefreshAllStatus()
+        setRefresh(data)
+        if (!data.running) clearInterval(pollRef.current)
+      } catch { clearInterval(pollRef.current) }
+    }, 2000)
+  }
+
+  async function handleRefreshAll() {
+    const { data } = await refreshAllValues()
+    setRefresh(data)
+    startPolling()
+  }
 
   async function handleSaveToken(e) {
     e.preventDefault()
@@ -134,9 +156,34 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Export */}
-      <div className="bg-[#1A2E45] rounded-xl p-4">
-        <p className="text-[#94A3B8] text-xs font-semibold uppercase tracking-wide mb-3">Data</p>
+      {/* Data */}
+      <div className="bg-[#1A2E45] rounded-xl p-4 space-y-3">
+        <p className="text-[#94A3B8] text-xs font-semibold uppercase tracking-wide">Data</p>
+
+        <div>
+          <button onClick={handleRefreshAll} disabled={refresh?.running}
+            className="w-full bg-[#0D1B2A] text-white rounded-xl py-3 text-sm disabled:opacity-40">
+            {refresh?.running ? 'Refreshing sold data…' : '↻ Refresh Sold Data for All Cards'}
+          </button>
+          {refresh?.running && (
+            <div className="mt-2">
+              <div className="h-1.5 bg-[#0D1B2A] rounded-full overflow-hidden">
+                <div className="h-full bg-[#A8DADC] transition-all"
+                  style={{ width: `${refresh.total ? (refresh.done / refresh.total) * 100 : 0}%` }} />
+              </div>
+              <p className="text-[#94A3B8] text-xs mt-1">{refresh.done} / {refresh.total} cards checked</p>
+            </div>
+          )}
+          {refresh && !refresh.running && refresh.finished_at && (
+            <p className="text-[#94A3B8] text-xs mt-2">
+              Done — updated {refresh.refreshed} of {refresh.total} cards. Cards priced in the last 24h are skipped.
+            </p>
+          )}
+          {!refresh && (
+            <p className="text-[#4A6080] text-xs mt-2">Pulls recent eBay sold prices for the whole collection.</p>
+          )}
+        </div>
+
         <button onClick={handleExport} disabled={exporting}
           className="w-full bg-[#0D1B2A] text-white rounded-xl py-3 text-sm disabled:opacity-40">
           {exporting ? 'Exporting…' : '⬇ Export Collection to CSV'}

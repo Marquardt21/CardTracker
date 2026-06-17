@@ -27,6 +27,9 @@ export const autocomplete  = (q, field, extra = {}) => client.get('/autocomplete
 // Values
 export const getValues     = (id) => client.get(`/cards/${id}/values`)
 export const refreshValue  = (id) => client.post(`/cards/${id}/values/refresh`)
+export const getActiveListings = (id) => client.get(`/cards/${id}/active-listings`)
+export const refreshAllValues   = () => client.post('/values/refresh-all')
+export const getRefreshAllStatus = () => client.get('/values/refresh-all/status')
 
 // Sets
 export const getCardVariants = (setId, cardNumber) => client.get(`/sets/${setId}/card-variants`, { params: { card_number: cardNumber } })

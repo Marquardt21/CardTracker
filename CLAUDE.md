@@ -119,7 +119,8 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 - Graded slabs (PSA/BGS/SGC/CGC) are filtered out of all results
 - Results cached in `card_values` table; never re-fetches within 24 hours
 - Price history displayed as a line chart on the Card Detail page
-- "Refresh All Values" in Settings triggers a background refresh for the entire collection
+- Card Detail also shows **Current eBay Listings** — live active BIN listings (Browse API, `GET /api/cards/{id}/active-listings`) with price, condition, image, and click-through link; not stored. Useful sold-data proxy while Marketplace Insights approval is pending.
+- "Refresh All Values" in Settings triggers a background job (`POST /api/values/refresh-all`, polled via `/status`) over the whole collection
 
 ### 5. Grading Recommendation Engine
 - Cards can be added to a "Grading Watchlist" (toggle on Collection or Card Detail)

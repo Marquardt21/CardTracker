@@ -70,6 +70,14 @@ class CardValueOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ActiveListingOut(BaseModel):
+    title: str
+    price: float
+    url: str | None = None
+    condition: str | None = None
+    image_url: str | None = None
+
+
 # Autocomplete suggestion returned from /api/autocomplete
 class AutocompleteSuggestion(BaseModel):
     set_checklist_card_id: int

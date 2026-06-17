@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteCard, generateGrading, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
+import { deleteCard, generateGrading, getActiveListings, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
 import GradingBadge from '../components/GradingBadge'
 import PriceChart from '../components/PriceChart'
 
@@ -38,7 +38,26 @@ export default function CardDetail() {
   const [priceRec,      setPriceRec]      = useState(null)
   const [priceRecLoading, setPriceRecLoading] = useState(false)
 
+  // Active eBay listings (live, not stored)
+  const [activeListings, setActiveListings] = useState(null)
+  const [listingsLoading, setListingsLoading] = useState(false)
+  const [listingsError, setListingsError]     = useState(false)
+
   useEffect(() => { fetchAll() }, [id])
+  useEffect(() => { loadActiveListings() }, [id])
+
+  async function loadActiveListings() {
+    setListingsLoading(true)
+    setListingsError(false)
+    try {
+      const { data } = await getActiveListings(id)
+      setActiveListings(data)
+    } catch {
+      setListingsError(true)
+    } finally {
+      setListingsLoading(false)
+    }
+  }
 
   async function fetchAll() {
     try {
@@ -296,6 +315,54 @@ export default function CardDetail() {
           <PriceChart values={[...values].sort((a,b) => new Date(a.fetched_at) - new Date(b.fetched_at))} />
         </div>
       )}
+
+      {/* ── Current eBay listings (live) ──────────────────────────────────── */}
+      <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-white font-semibold text-sm">Current eBay Listings</p>
+          <button onClick={loadActiveListings} disabled={listingsLoading}
+            className="text-[#A8DADC] text-xs border border-[#A8DADC]/30 rounded-lg px-2.5 py-1.5 min-h-0 disabled:opacity-40">
+            {listingsLoading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+
+        {listingsLoading && !activeListings && (
+          <p className="text-[#94A3B8] text-sm">Fetching active listings…</p>
+        )}
+        {listingsError && (
+          <p className="text-[#94A3B8] text-sm">Couldn't load listings — eBay may be rate-limiting. Try Refresh.</p>
+        )}
+        {!listingsLoading && !listingsError && activeListings?.length === 0 && (
+          <p className="text-[#94A3B8] text-sm">No active listings found for this card.</p>
+        )}
+
+        {activeListings?.length > 0 && (
+          <div>
+            <p className="text-[#4A6080] text-xs mb-2">Live asking prices (closest matches first) — swipe and tap to verify on eBay.</p>
+            <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-2
+              [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {activeListings.map((l, i) => (
+                <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                  className="snap-start shrink-0 w-36 bg-[#0D1B2A] rounded-xl overflow-hidden active:bg-[#A8DADC]/10">
+                  <div className="w-full h-36 bg-[#1A2E45] flex items-center justify-center">
+                    {l.image_url
+                      ? <img src={l.image_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-2xl">🃏</span>}
+                  </div>
+                  <div className="p-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#A8DADC] text-base font-bold">${l.price.toFixed(2)}</span>
+                      <span className="text-[#A8DADC] text-xs">↗</span>
+                    </div>
+                    {l.condition && <p className="text-[#94A3B8] text-xs truncate">{l.condition}</p>}
+                    <p className="text-white text-xs line-clamp-2 mt-0.5">{l.title}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── Selling section ─────────────────────────────────────────────── */}
       <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
