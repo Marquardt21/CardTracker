@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { deleteCard, generateGrading, getActiveListings, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
+import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 import GradingBadge from '../components/GradingBadge'
 import PriceChart from '../components/PriceChart'
 
@@ -42,6 +43,9 @@ export default function CardDetail() {
   const [activeListings, setActiveListings] = useState(null)
   const [listingsLoading, setListingsLoading] = useState(false)
   const [listingsError, setListingsError]     = useState(false)
+
+  // Create-listing modal
+  const [showListModal, setShowListModal] = useState(false)
 
   useEffect(() => { fetchAll() }, [id])
   useEffect(() => { loadActiveListings() }, [id])
@@ -368,7 +372,27 @@ export default function CardDetail() {
       <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
         <p className="text-white font-semibold mb-3">🏷️ Selling</p>
 
-        {/* ── For Sale ──────────────────────────────────────────────────── */}
+        {/* ── List on eBay (create a real listing) ──────────────────────── */}
+        {card.is_sold ? (
+          <div className="bg-[#0D1B2A] rounded-xl p-3 mb-4 text-center">
+            <p className="text-green-400 text-sm font-medium">Sold ✓</p>
+          </div>
+        ) : card.is_selling ? (
+          <div className="bg-[#0D1B2A] rounded-xl p-3 mb-4 flex items-center justify-between">
+            <span className="text-yellow-300 text-sm font-medium">Listed on eBay</span>
+            {card.listing_url && (
+              <a href={card.listing_url} target="_blank" rel="noreferrer"
+                className="text-[#A8DADC] text-xs underline">View listing ↗</a>
+            )}
+          </div>
+        ) : (
+          <button onClick={() => setShowListModal(true)}
+            className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold rounded-xl py-3 text-sm mb-4">
+            🏷️ List on eBay
+          </button>
+        )}
+
+        {/* ── For Sale (manual tracking) ────────────────────────────────── */}
         <label className="flex items-center gap-3 cursor-pointer mb-3">
           <input type="checkbox" checked={isSelling} onChange={e => {
             setIsSelling(e.target.checked)
@@ -565,6 +589,14 @@ export default function CardDetail() {
               </div>
             </div>}
       </div>
+
+      {showListModal && (
+        <CreateEbayDraftModal
+          cards={[card]}
+          onClose={() => setShowListModal(false)}
+          onSuccess={() => { fetchAll() }}
+        />
+      )}
     </div>
   )
 }

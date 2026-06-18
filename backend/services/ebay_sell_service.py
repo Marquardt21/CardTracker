@@ -603,8 +603,8 @@ def create_draft(
         logger.error("eBay inventory item %s: %s", resp.status_code, resp.text)
         raise ValueError(f"eBay inventory item error {resp.status_code}: {resp.text[:400]}")
 
-    # Step 2: schedule 2 hours from now so seller can review before it goes live
-    go_live = datetime.now(timezone.utc) + timedelta(hours=2)
+    # Step 2: schedule 30 minutes from now so seller can review before it goes live
+    go_live = datetime.now(timezone.utc) + timedelta(minutes=30)
     listing_start_date = go_live.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     location_key = _ensure_merchant_location_key(token)

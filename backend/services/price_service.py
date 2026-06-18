@@ -155,7 +155,9 @@ async def fetch_active_listings(card: Card, limit: int = 10) -> list[dict]:
     out: list[dict] = []
     for query in _build_queries(card):
         for item in await _browse_active_listings(query, limit, token):
-            key = item.get("url") or f"{item['title']}|{item['price']}"
+            # Dedup on eBay's stable item id — the same item returned across
+            # queries comes back with query-specific tracking params in the URL.
+            key = str(item.get("item_id") or item.get("url") or f"{item['title']}|{item['price']}")
             if key in seen:
                 continue
             seen.add(key)
@@ -383,6 +385,7 @@ async def _browse_active_listings(query: str, limit: int, token: str) -> list[di
             except (KeyError, ValueError, TypeError):
                 continue
             results.append({
+                "item_id":   item.get("itemId") or item.get("legacyItemId"),
                 "title":     title,
                 "price":     round(price, 2),
                 "url":       item.get("itemWebUrl"),

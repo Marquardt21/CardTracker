@@ -49,6 +49,7 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
   const [description, setDescription] = useState(() => buildDescription(cards))
   const [photoUrl, setPhotoUrl]     = useState('')
   const [placeholderUrl, setPlaceholderUrl] = useState('')
+  const [photoCustom, setPhotoCustom] = useState(false)
   const [showDesc, setShowDesc]     = useState(false)
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState(null)
@@ -104,7 +105,7 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
             <p className="text-4xl mb-3">🕐</p>
             <h2 className="text-white text-xl font-bold mb-2">Listing Scheduled!</h2>
             <p className="text-[#94A3B8] text-sm mb-1">
-              Goes live in ~2 hours. Add photos now, or cancel in Seller Hub before then.
+              Goes live in ~30 minutes. Review or cancel it in Seller Hub before then.
             </p>
             {result.scheduled_for && (
               <p className="text-[#A8DADC] text-xs mb-5">
@@ -195,27 +196,37 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
               </div>
             </label>
 
-            {/* Photo URL */}
-            <label className="block mb-3">
-              <span className="text-[#94A3B8] text-xs uppercase tracking-wide flex justify-between">
-                Photo URL
-                {photoUrl && photoUrl === placeholderUrl && (
-                  <span className="normal-case text-yellow-400 font-normal">using placeholder — swap in eBay</span>
-                )}
-              </span>
-              <input
-                type="url"
-                value={photoUrl}
-                onChange={e => setPhotoUrl(e.target.value)}
-                placeholder="https://i.imgur.com/yourphoto.jpg"
-                className="mt-1 w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC] text-sm"
-              />
-              <p className="text-[#4A6080] text-xs mt-1">
-                {placeholderUrl
-                  ? 'Placeholder pre-filled — replace with the real card photo, or swap it in eBay Seller Hub before go-live.'
-                  : 'Upload to Imgur and paste the direct link, or set EBAY_PLACEHOLDER_IMAGE_URL in .env for a default.'}
-              </p>
-            </label>
+            {/* Photo */}
+            {placeholderUrl && !photoCustom ? (
+              <div className="mb-3 bg-[#1A2E45] rounded-xl px-4 py-3">
+                <p className="text-[#94A3B8] text-sm">📷 Using placeholder image</p>
+                <p className="text-[#4A6080] text-xs mt-0.5">Add your real card photos in the eBay app after listing.</p>
+                <button type="button"
+                  onClick={() => { setPhotoCustom(true); setPhotoUrl('') }}
+                  className="text-[#A8DADC] text-xs underline mt-2">
+                  Use a custom photo URL instead
+                </button>
+              </div>
+            ) : (
+              <label className="block mb-3">
+                <span className="text-[#94A3B8] text-xs uppercase tracking-wide">Photo URL</span>
+                <input
+                  type="url"
+                  value={photoUrl}
+                  onChange={e => setPhotoUrl(e.target.value)}
+                  placeholder="https://i.imgur.com/yourphoto.jpg"
+                  className="mt-1 w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC] text-sm"
+                />
+                <p className="text-[#4A6080] text-xs mt-1">
+                  Public HTTPS link (Imgur or GitHub raw).
+                  {placeholderUrl && (
+                    <button type="button"
+                      onClick={() => { setPhotoCustom(false); setPhotoUrl(placeholderUrl) }}
+                      className="text-[#A8DADC] underline ml-1">Use placeholder</button>
+                  )}
+                </p>
+              </label>
+            )}
 
             {/* Description (collapsible) */}
             <div className="mb-4">
@@ -245,7 +256,7 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
 
             <div className="bg-[#1A2E45] rounded-xl p-3 mb-4">
               <p className="text-[#94A3B8] text-xs">
-                Listing goes live in 2 hours — add photos in Seller Hub before then, or cancel it if you change your mind. Shipping: USPS First Class flat rate.
+                Listing goes live in 30 minutes — review or cancel it in Seller Hub before then. Shipping: USPS First Class flat rate.
               </p>
             </div>
 
@@ -254,7 +265,7 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
               disabled={loading}
               className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold rounded-xl py-3 disabled:opacity-40"
             >
-              {loading ? 'Scheduling on eBay…' : 'Schedule Listing (2 hr delay)'}
+              {loading ? 'Scheduling on eBay…' : 'Schedule Listing (30 min delay)'}
             </button>
           </form>
         )}
