@@ -39,6 +39,10 @@ PRICE_SPIKE_THRESHOLD = 0.25
 GRADING_ROI_WORTH_IT = 20.0
 GRADING_ROI_BORDERLINE = 5.0
 
+# How long a cached active-listing summary (low/high/count) stays fresh before
+# the Collection price button will re-fetch it live from eBay.
+ACTIVE_LISTING_TTL_DAYS = 7
+
 SCRAPER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "

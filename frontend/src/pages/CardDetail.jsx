@@ -50,11 +50,11 @@ export default function CardDetail() {
   useEffect(() => { fetchAll() }, [id])
   useEffect(() => { loadActiveListings() }, [id])
 
-  async function loadActiveListings() {
+  async function loadActiveListings(force = false) {
     setListingsLoading(true)
     setListingsError(false)
     try {
-      const { data } = await getActiveListings(id)
+      const { data } = await getActiveListings(id, force)
       setActiveListings(data)
     } catch {
       setListingsError(true)
@@ -324,7 +324,7 @@ export default function CardDetail() {
       <div className="bg-[#1A2E45] rounded-xl p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-white font-semibold text-sm">Current eBay Listings</p>
-          <button onClick={loadActiveListings} disabled={listingsLoading}
+          <button onClick={() => loadActiveListings(true)} disabled={listingsLoading}
             className="text-[#A8DADC] text-xs border border-[#A8DADC]/30 rounded-lg px-2.5 py-1.5 min-h-0 disabled:opacity-40">
             {listingsLoading ? 'Loading…' : 'Refresh'}
           </button>

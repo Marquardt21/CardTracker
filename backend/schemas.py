@@ -78,6 +78,16 @@ class ActiveListingOut(BaseModel):
     image_url: str | None = None
 
 
+class ListingSummaryOut(BaseModel):
+    card_id: int
+    low: float | None = None
+    high: float | None = None
+    count: int = 0
+    listings: list[ActiveListingOut] = []
+    fetched_at: datetime
+    stale: bool = False
+
+
 # Autocomplete suggestion returned from /api/autocomplete
 class AutocompleteSuggestion(BaseModel):
     set_checklist_card_id: int

@@ -51,6 +51,22 @@ class CardValue(Base):
     card: Mapped["Card"] = relationship("Card", back_populates="values")
 
 
+class ActiveListingCache(Base):
+    """Cached summary of current eBay active (asking) listings for a card.
+
+    Populated by the Collection price button; reused for ACTIVE_LISTING_TTL_DAYS
+    so we don't re-hit the eBay Browse API on every view. `listings_json` holds
+    the full listing array (for the expand-to-carousel view)."""
+    __tablename__ = "active_listing_cache"
+
+    card_id: Mapped[int] = mapped_column(Integer, ForeignKey("cards.id"), primary_key=True)
+    low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    listings_json: Mapped[str] = mapped_column(Text, default="[]")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SetChecklist(Base):
     __tablename__ = "set_checklists"
 

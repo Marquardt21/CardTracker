@@ -100,6 +100,15 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 - Upload a card photo directly from the app
 - Browse the collection with search, filter (player/team/brand/year/type/condition), and sort
 - "Unmatched" filter tab shows cards not yet linked to an official checklist — appears only when relevant
+- **Cascading filters** (client-side, on `Collection.jsx`): pick a Set first, then narrow by Type / Parallel / Player / Team. The dependent dropdowns' options are derived from the cards in the selected set; changing the set resets them.
+- **Get eBay Prices** button: pulls live eBay asking-price summaries for every card in the current filtered view and shows a **low–high range + listing count** to the right of each row, all on one screen. Tap a price to expand the live BIN carousel inline. Fetch is throttled (3 concurrent). Selecting multiple cards (Select mode) → **List on eBay** still creates one lot listing.
+- Price summaries are **cached for 7 days** (`ACTIVE_LISTING_TTL_DAYS`, `active_listing_cache` table). Cached values pre-populate the column on load (`GET /api/listing-summaries`, read-only, no eBay calls); the button only re-fetches cards whose cache is missing or stale (`POST /api/cards/{id}/listing-summary`, `?force=true` to bypass TTL). Empty/rate-limited results are **not** persisted, so they retry next time.
+
+### 1b. Value & List on Save (Add Card)
+- After saving a card on the Add Card page, the "Card saved!" panel auto-loads **Current eBay Listings** for that card (same live BIN carousel as Card Detail, via `GET /api/cards/{id}/active-listings`) so you can value it at a glance
+- A **List on eBay** button in the same panel opens `CreateEbayDraftModal` for the just-saved card — value and list in one flow without leaving the page
+- After the listing is scheduled, the button shows "Listed on eBay ✓"; **Add Another** (keeps the current set) and **View Card** remain available
+- Listings load is keyed by the saved card id, so it appears only after Save (not during form entry)
 
 ### 2. Autocomplete Card Entry
 - Typing 2+ characters in any field (card number, player name, set name) on the Add Card page queries imported set checklists
@@ -119,7 +128,8 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 - Graded slabs (PSA/BGS/SGC/CGC) are filtered out of all results
 - Results cached in `card_values` table; never re-fetches within 24 hours
 - Price history displayed as a line chart on the Card Detail page
-- Card Detail also shows **Current eBay Listings** — live active BIN listings (Browse API, `GET /api/cards/{id}/active-listings`) with price, condition, image, and click-through link; not stored. Useful sold-data proxy while Marketplace Insights approval is pending.
+- Card Detail also shows **Current eBay Listings** — active BIN listings (Browse API, `GET /api/cards/{id}/active-listings`) with price, condition, image, and click-through link. Useful sold-data proxy while Marketplace Insights approval is pending.
+- **Active-listing cache (7-day TTL)**: every successful active-listings lookup is cached in `active_listing_cache` (`ACTIVE_LISTING_TTL_DAYS`) and reused for 7 days, so the same card isn't re-fetched from eBay within that window. All read paths go through the same cache-aware helper (`_get_or_fetch_listings`): Card Detail / Add Card auto-loads use the cache; the Card Detail **Refresh** button and Collection price pull can force a live re-fetch (`?force=true`). Empty/rate-limited results are never persisted (they retry next time). The Collection price column pre-loads cached summaries via read-only `GET /api/listing-summaries`.
 - "Refresh All Values" in Settings triggers a background job (`POST /api/values/refresh-all`, polled via `/status`) over the whole collection
 
 ### 5. Grading Recommendation Engine

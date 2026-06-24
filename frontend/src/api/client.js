@@ -27,7 +27,9 @@ export const autocomplete  = (q, field, extra = {}) => client.get('/autocomplete
 // Values
 export const getValues     = (id) => client.get(`/cards/${id}/values`)
 export const refreshValue  = (id) => client.post(`/cards/${id}/values/refresh`)
-export const getActiveListings = (id) => client.get(`/cards/${id}/active-listings`)
+export const getActiveListings = (id, force = false) => client.get(`/cards/${id}/active-listings`, { params: { force } })
+export const getListingSummaries  = () => client.get('/listing-summaries')
+export const refreshListingSummary = (id, force = false) => client.post(`/cards/${id}/listing-summary`, null, { params: { force } })
 export const refreshAllValues   = () => client.post('/values/refresh-all')
 export const getRefreshAllStatus = () => client.get('/values/refresh-all/status')
 

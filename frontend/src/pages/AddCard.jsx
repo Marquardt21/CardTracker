@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { autocomplete, checkCardExists, createCard, searchSets } from '../api/client'
+import { autocomplete, checkCardExists, createCard, getActiveListings, searchSets } from '../api/client'
 import AutocompleteInput from '../components/AutocompleteInput'
+import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 import ImportSetPanel from '../components/ImportSetPanel'
 import UnmatchedReviewModal from '../components/UnmatchedReviewModal'
 
@@ -60,6 +61,27 @@ export default function AddCard() {
   const [pendingSave,  setPendingSave]  = useState(null)
   const [showImport,   setShowImport]   = useState(false)
   const [importResult, setImportResult] = useState(null)
+
+  // ── Live eBay listings + List-on-eBay flow for the just-saved card ───────────
+  const [activeListings,  setActiveListings]  = useState(null)
+  const [listingsLoading, setListingsLoading] = useState(false)
+  const [listingsError,   setListingsError]   = useState(false)
+  const [showListModal,   setShowListModal]   = useState(false)
+  const [listed,          setListed]          = useState(false)
+
+  // Auto-load active eBay listings whenever a card is saved
+  useEffect(() => {
+    if (!savedCard) { setActiveListings(null); return }
+    let cancelled = false
+    setListingsLoading(true)
+    setListingsError(false)
+    setActiveListings(null)
+    getActiveListings(savedCard.id)
+      .then(({ data }) => { if (!cancelled) setActiveListings(data) })
+      .catch(() => { if (!cancelled) setListingsError(true) })
+      .finally(() => { if (!cancelled) setListingsLoading(false) })
+    return () => { cancelled = true }
+  }, [savedCard])
 
   // ── Set autocomplete ─────────────────────────────────────────────────────────
   function handleSetInput(e) {
@@ -219,7 +241,7 @@ export default function AddCard() {
   }
 
   function resetForm() {
-    setSavedCard(null); setDuplicates(null); setPendingSave(null)
+    setSavedCard(null); setDuplicates(null); setPendingSave(null); setListed(false)
     setSetQuery(''); setSetOptions([]); setSetOpen(false); setSetActive(-1)
     setSelectedSet(null); setSelectedYear('')
     setCardNumber(''); setCardType('base'); setParallelColor('')
@@ -231,7 +253,7 @@ export default function AddCard() {
 
   function addAnother() {
     // Keep the set from the card just saved; clear everything else
-    setSavedCard(null); setDuplicates(null); setPendingSave(null)
+    setSavedCard(null); setDuplicates(null); setPendingSave(null); setListed(false)
     setCardNumber(''); setCardType('base'); setParallelColor('')
     setShowSoldSection(false)
     setPrefill(p => ({ playerName: '', brand: p.brand, year: p.year, setName: p.setName, cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' }))
@@ -273,6 +295,61 @@ export default function AddCard() {
           <p className="text-[#94A3B8] text-xs mb-4">
             {savedCard.player_name} · #{savedCard.card_number} · {savedCard.set_name}
           </p>
+
+          {/* ── Current eBay listings (live) ──────────────────────────────── */}
+          <div className="bg-[#1A2E45] rounded-xl p-3 mb-4">
+            <p className="text-white font-semibold text-sm mb-2">Current eBay Listings</p>
+
+            {listingsLoading && (
+              <p className="text-[#94A3B8] text-sm">Fetching active listings…</p>
+            )}
+            {listingsError && (
+              <p className="text-[#94A3B8] text-sm">Couldn't load listings — eBay may be rate-limiting.</p>
+            )}
+            {!listingsLoading && !listingsError && activeListings?.length === 0 && (
+              <p className="text-[#94A3B8] text-sm">No active listings found for this card.</p>
+            )}
+
+            {activeListings?.length > 0 && (
+              <>
+                <p className="text-[#4A6080] text-xs mb-2">Live asking prices (closest matches first) — tap to verify on eBay.</p>
+                <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-2
+                  [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {activeListings.map((l, i) => (
+                    <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                      className="snap-start shrink-0 w-36 bg-[#0D1B2A] rounded-xl overflow-hidden active:bg-[#A8DADC]/10">
+                      <div className="w-full h-36 bg-[#1A2E45] flex items-center justify-center">
+                        {l.image_url
+                          ? <img src={l.image_url} alt="" className="w-full h-full object-cover" />
+                          : <span className="text-2xl">🃏</span>}
+                      </div>
+                      <div className="p-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#A8DADC] text-base font-bold">${l.price.toFixed(2)}</span>
+                          <span className="text-[#A8DADC] text-xs">↗</span>
+                        </div>
+                        {l.condition && <p className="text-[#94A3B8] text-xs truncate">{l.condition}</p>}
+                        <p className="text-white text-xs line-clamp-2 mt-0.5">{l.title}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── List on eBay ──────────────────────────────────────────────── */}
+          {listed ? (
+            <div className="bg-[#0D1B2A] rounded-xl p-3 mb-4 text-center">
+              <p className="text-yellow-300 text-sm font-medium">Listed on eBay ✓</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setShowListModal(true)}
+              className="w-full bg-[#A8DADC] text-[#0D1B2A] font-semibold rounded-xl py-2.5 text-sm mb-4">
+              🏷️ List on eBay
+            </button>
+          )}
+
           <div className="flex gap-3">
             <button type="button" onClick={addAnother}
               className="flex-1 bg-[#1A2E45] text-white rounded-xl py-2.5 text-sm font-medium">
@@ -452,6 +529,14 @@ export default function AddCard() {
           </button>
         )}
       </form>
+
+      {showListModal && savedCard && (
+        <CreateEbayDraftModal
+          cards={[savedCard]}
+          onClose={() => setShowListModal(false)}
+          onSuccess={() => setListed(true)}
+        />
+      )}
     </div>
   )
 }
