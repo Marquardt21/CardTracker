@@ -11,6 +11,8 @@ from backend.services import ebay_sell_service
 
 router = APIRouter(prefix="/api/ebay", tags=["ebay"])
 
+AUCTION_DURATIONS = {"DAYS_1", "DAYS_3", "DAYS_5", "DAYS_7", "DAYS_10"}
+
 _SUCCESS_HTML = """
 <!DOCTYPE html>
 <html>
@@ -38,11 +40,13 @@ _FAIL_HTML_TMPL = (
 
 
 class DraftRequest(BaseModel):
-    card_ids:    list[int]
-    price:       float
-    title:       str | None = None
-    description: str | None = None
-    image_urls:  list[str] = []
+    card_ids:       list[int]
+    price:          float
+    title:          str | None = None
+    description:    str | None = None
+    image_urls:     list[str] = []
+    listing_format: str = "FIXED_PRICE"  # FIXED_PRICE | AUCTION (price = starting bid)
+    auction_duration: str = "DAYS_7"     # one of AUCTION_DURATIONS, used when AUCTION
 
 
 class CodeRequest(BaseModel):
@@ -126,8 +130,16 @@ def create_draft(req: DraftRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No cards selected")
     if req.price <= 0:
         raise HTTPException(status_code=400, detail="Price must be greater than 0")
+    if req.listing_format not in ("FIXED_PRICE", "AUCTION"):
+        raise HTTPException(status_code=400, detail="Invalid listing format")
+    if req.listing_format == "AUCTION" and req.auction_duration not in AUCTION_DURATIONS:
+        raise HTTPException(status_code=400, detail="Invalid auction duration")
     try:
-        return ebay_sell_service.create_draft(db, req.card_ids, req.price, req.title, req.description, req.image_urls)
+        return ebay_sell_service.create_draft(
+            db, req.card_ids, req.price, req.title, req.description, req.image_urls,
+            listing_format=req.listing_format,
+            auction_duration=req.auction_duration,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

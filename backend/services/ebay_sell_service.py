@@ -508,6 +508,9 @@ def _ensure_policies(token: str) -> dict:
     return {"pwe": _pwe_policy_id, "ground": _ground_policy_id, "return": _return_policy_id}
 
 
+_AUCTION_DURATION = "DAYS_7"  # eBay auctions default to a 7-day run
+
+
 def create_draft(
     db: Session,
     card_ids: list[int],
@@ -515,6 +518,8 @@ def create_draft(
     title: str | None,
     description: str | None,
     image_urls: list[str] | None = None,
+    listing_format: str = "FIXED_PRICE",
+    auction_duration: str = _AUCTION_DURATION,
 ) -> dict:
     cards = db.query(Card).filter(Card.id.in_(card_ids)).all()
     if not cards:
@@ -535,6 +540,11 @@ def create_draft(
 
     worst = max(cards, key=lambda c: _COND_RANK.get(c.condition, 5))
     is_lot = len(cards) > 1
+    is_auction = listing_format == "AUCTION"
+    # Shipping tier: auctions use the heavier Ground policy regardless of the
+    # starting bid, since the final hammer price (and value) is unknown and may
+    # exceed the Standard Envelope limit. Fixed-price uses the ≤$20 threshold.
+    heavy_shipping = is_auction or price > 20
     # A multi-card selection is published as a single lot listing in the Trading
     # Card Lots category (261329); a single card goes to Trading Card Singles.
     # Condition enum maps to a category-specific conditionId:
@@ -582,7 +592,7 @@ def create_draft(
 
     # eBay requires a package weight to publish. Cards ship in a penny sleeve +
     # top loader: ~1 oz as a Standard Envelope (≤$20), heavier package otherwise.
-    if price <= 20:
+    if not heavy_shipping:
         item_body["packageWeightAndSize"] = {
             "weight": {"value": 1, "unit": "OUNCE"},
             "packageType": "LETTER",
@@ -610,21 +620,29 @@ def create_draft(
     location_key = _ensure_merchant_location_key(token)
     policies     = _ensure_policies(token)
 
-    fulfillment_id = policies["pwe"] if price <= 20 else policies["ground"]
+    fulfillment_id = policies["ground"] if heavy_shipping else policies["pwe"]
     return_id      = policies["return"]
 
     offer_payload: dict = {
         "sku":            sku,
         "marketplaceId":  "EBAY_US",
-        "format":         "FIXED_PRICE",
+        "format":         "AUCTION" if is_auction else "FIXED_PRICE",
         "categoryId":     category_id,
         "listingDescription": final_desc.replace("\n", "<br>") or final_title,
         "listingStartDate":   listing_start_date,
-        "pricingSummary": {
-            "price": {"currency": "USD", "value": f"{price:.2f}"}
-        },
-        "quantityLimitPerBuyer": 1,
     }
+    if is_auction:
+        # `price` is the starting bid; auctions run for the chosen duration and
+        # have an inherent quantity of 1 (no per-buyer limit).
+        offer_payload["pricingSummary"] = {
+            "auctionStartPrice": {"currency": "USD", "value": f"{price:.2f}"}
+        }
+        offer_payload["listingDuration"] = auction_duration
+    else:
+        offer_payload["pricingSummary"] = {
+            "price": {"currency": "USD", "value": f"{price:.2f}"}
+        }
+        offer_payload["quantityLimitPerBuyer"] = 1
     listing_policies: dict = {}
     if fulfillment_id:
         listing_policies["fulfillmentPolicyId"] = fulfillment_id
@@ -664,6 +682,7 @@ def create_draft(
         title          = final_title,
         description    = final_desc,
         price          = price,
+        listing_format = listing_format,
         status         = "scheduled",
     )
     db.add(draft)

@@ -140,7 +140,9 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 
 ### 6. eBay Listing (Primary Active Development Area)
 - From the Selling Dashboard or Card Detail, user selects one or more cards and opens the "List on eBay" modal
-- User sets price, edits the auto-generated title/description, provides a photo URL (Imgur or GitHub raw link), submits
+- User picks a **format — Buy It Now or Auction** — sets the price (for Auction this is the **starting bid**), edits the auto-generated title/description, provides a photo URL (Imgur or GitHub raw link), submits
+- **Auction support** (`listing_format` on the request and `EbayDraftListing`): the offer uses `format: AUCTION` with `pricingSummary.auctionStartPrice` and a user-chosen `listingDuration` (`auction_duration`, picker in the modal — `DAYS_1/3/5/7/10`, default 7, validated server-side against `AUCTION_DURATIONS`, no per-buyer limit); Buy It Now uses `format: FIXED_PRICE` with `pricingSummary.price`. Everything else (inventory item, condition, policies, scheduling) is identical.
+- **Shipping tier**: fixed-price branches on the entered price (≤$20 → Standard Envelope / 1 oz LETTER, else Ground / 3 oz thick envelope). **Auctions always use the heavier Ground tier** (`heavy_shipping = is_auction or price > 20`) since the final hammer price is unknown and may exceed the envelope limit.
 - Backend flow:
   1. Creates an eBay inventory item (Sell Inventory API). **One card → category 261328 "Trading Card Singles"; multiple cards → one lot listing in category 261329 "Trading Card Lots"** (Singles rejects multi-card titles/keywords, errorId 25019). Item details:
      - Single: `condition = USED_VERY_GOOD` (conditionId 4000 = "Ungraded"; `LIKE_NEW` would map to 2750 = "Graded" and force grade descriptors) + a **Card Condition** descriptor (40001, NM/EX/VG/Poor) fetched from the Metadata API with a documented fallback

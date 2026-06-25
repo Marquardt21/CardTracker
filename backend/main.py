@@ -35,6 +35,7 @@ def _run_migrations():
         for col, sql in [
             ("sold_price", "ALTER TABLE ebay_draft_listings ADD COLUMN sold_price FLOAT"),
             ("sold_date",  "ALTER TABLE ebay_draft_listings ADD COLUMN sold_date DATETIME"),
+            ("listing_format", "ALTER TABLE ebay_draft_listings ADD COLUMN listing_format VARCHAR DEFAULT 'FIXED_PRICE'"),
         ]:
             if listing_cols and col not in listing_cols:
                 conn.execute(text(sql))

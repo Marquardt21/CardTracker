@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createEbayDraft, getSettings } from '../api/client'
 
 const COND_LABELS = { poor: 'Poor', good: 'Good', very_good: 'VG', excellent: 'EX', near_mint: 'NM', mint: 'Mint' }
+const AUCTION_DURATIONS = [['DAYS_1', '1 day'], ['DAYS_3', '3 days'], ['DAYS_5', '5 days'], ['DAYS_7', '7 days'], ['DAYS_10', '10 days']]
 const COND_RANK   = { mint: 0, near_mint: 1, excellent: 2, very_good: 3, good: 4, poor: 5 }
 
 function buildTitle(cards) {
@@ -45,6 +46,8 @@ function buildDescription(cards) {
 
 export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
   const [title, setTitle]           = useState(() => buildTitle(cards))
+  const [format, setFormat]         = useState('FIXED_PRICE')  // FIXED_PRICE | AUCTION
+  const [duration, setDuration]     = useState('DAYS_7')
   const [price, setPrice]           = useState('')
   const [description, setDescription] = useState(() => buildDescription(cards))
   const [photoUrl, setPhotoUrl]     = useState('')
@@ -79,11 +82,13 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
     setError(null)
     try {
       const { data } = await createEbayDraft({
-        card_ids:    cards.map(c => c.id),
-        price:       p,
-        title:       title.trim() || undefined,
-        description: description.trim() || undefined,
-        image_urls:  photoUrl.trim() ? [photoUrl.trim()] : [],
+        card_ids:       cards.map(c => c.id),
+        price:          p,
+        title:          title.trim() || undefined,
+        description:    description.trim() || undefined,
+        image_urls:     photoUrl.trim() ? [photoUrl.trim()] : [],
+        listing_format: format,
+        auction_duration: duration,
       })
       setResult(data)
     } catch (err) {
@@ -176,10 +181,49 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
               />
             </label>
 
+            {/* Format: Buy It Now / Auction */}
+            <div className="mb-3">
+              <span className="text-[#94A3B8] text-xs uppercase tracking-wide">Format</span>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {[['FIXED_PRICE', 'Buy It Now'], ['AUCTION', 'Auction']].map(([val, label]) => (
+                  <button
+                    type="button"
+                    key={val}
+                    onClick={() => setFormat(val)}
+                    className={`rounded-xl py-2.5 text-sm font-medium ${
+                      format === val
+                        ? 'bg-[#A8DADC] text-[#0D1B2A]'
+                        : 'bg-[#1A2E45] text-[#94A3B8]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Auction duration */}
+            {format === 'AUCTION' && (
+              <label className="block mb-3">
+                <span className="text-[#94A3B8] text-xs uppercase tracking-wide">Duration</span>
+                <select
+                  value={duration}
+                  onChange={e => setDuration(e.target.value)}
+                  className="mt-1 w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC] text-sm"
+                >
+                  {AUCTION_DURATIONS.map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             {/* Price */}
             <label className="block mb-3">
               <span className="text-[#94A3B8] text-xs uppercase tracking-wide">
-                {cards.length === 1 ? 'Price (USD)' : 'Lot Price (USD)'}
+                {format === 'AUCTION'
+                  ? (cards.length === 1 ? 'Starting Bid (USD)' : 'Lot Starting Bid (USD)')
+                  : (cards.length === 1 ? 'Price (USD)' : 'Lot Price (USD)')}
               </span>
               <div className="relative mt-1">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#94A3B8]">$</span>
@@ -256,7 +300,8 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
 
             <div className="bg-[#1A2E45] rounded-xl p-3 mb-4">
               <p className="text-[#94A3B8] text-xs">
-                Listing goes live in 30 minutes — review or cancel it in Seller Hub before then. Shipping: USPS First Class flat rate.
+                Listing goes live in 30 minutes — review or cancel it in Seller Hub before then.
+                {format === 'AUCTION' ? ` Auction runs ${AUCTION_DURATIONS.find(([v]) => v === duration)?.[1]}.` : ''} Shipping: USPS First Class flat rate.
               </p>
             </div>
 

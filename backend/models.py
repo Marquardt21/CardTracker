@@ -127,6 +127,7 @@ class EbayDraftListing(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
+    listing_format: Mapped[str] = mapped_column(String, default="FIXED_PRICE")  # FIXED_PRICE | AUCTION
     status: Mapped[str] = mapped_column(String, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     sold_price: Mapped[float | None] = mapped_column(Float, nullable=True)
