@@ -26,6 +26,7 @@ def list_sets(db: Session = Depends(get_db)):
             set_name=s.set_name,
             brand=s.brand,
             year=s.year,
+            sport=s.sport,
             total_cards=s.total_cards,
             source_url=s.source_url,
             imported_at=s.imported_at,
@@ -48,6 +49,7 @@ def search_sets(q: str = Query(""), db: Session = Depends(get_db)):
             set_name=s.set_name,
             brand=s.brand,
             year=s.year,
+            sport=s.sport,
             total_cards=s.total_cards,
             source_url=s.source_url,
             imported_at=s.imported_at,
@@ -67,6 +69,7 @@ def get_set(set_id: int, db: Session = Depends(get_db)):
         set_name=s.set_name,
         brand=s.brand,
         year=s.year,
+        sport=s.sport,
         total_cards=s.total_cards,
         source_url=s.source_url,
         imported_at=s.imported_at,
@@ -104,18 +107,22 @@ def get_needed(set_id: int, db: Session = Depends(get_db)):
     return [c for c in s.cards if not c.owned]
 
 
+_READ_ERROR = (
+    "Could not read that URL. Use an Upper Deck checklist page "
+    "or a direct link to an .xlsx checklist file."
+)
+
+
 @router.post("/preview-url", response_model=SetImportPreview)
 async def preview_url(body: PreviewUrlRequest):
-    result = await set_import_service.scrape_upper_deck_url(body.url)
+    result = await set_import_service.fetch_and_parse_url(body.url)
     if result is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not read that URL. Make sure it's an Upper Deck checklist page.",
-        )
+        raise HTTPException(status_code=422, detail=_READ_ERROR)
     return SetImportPreview(
         set_name=result["set_name"],
         brand=result["brand"],
         year=result["year"],
+        sport=result["sport"],
         card_count=len(result["cards"]),
         source_url=body.url,
     )
@@ -123,18 +130,21 @@ async def preview_url(body: PreviewUrlRequest):
 
 @router.post("/import-url", response_model=SetImportResult)
 async def import_url(body: ImportUrlRequest, db: Session = Depends(get_db)):
-    result = await set_import_service.scrape_upper_deck_url(body.url)
+    result = await set_import_service.fetch_and_parse_url(body.url)
     if result is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not read that URL. Make sure it's an Upper Deck checklist page.",
-        )
+        raise HTTPException(status_code=422, detail=_READ_ERROR)
+    # Corrections made on the preview screen win over what the parser guessed
+    for field in ("set_name", "brand", "year", "sport"):
+        value = getattr(body, field)
+        if value:
+            result[field] = value
     set_obj, reconciliation = set_import_service.save_set_and_reconcile(db, result, body.url)
     return SetImportResult(
         set_id=set_obj.id,
         set_name=set_obj.set_name,
         brand=set_obj.brand,
         year=set_obj.year,
+        sport=set_obj.sport,
         card_count=set_obj.total_cards,
         reconciliation=reconciliation,
     )

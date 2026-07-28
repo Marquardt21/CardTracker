@@ -1,22 +1,42 @@
 """
 Set import service.
 
-Primary method: scrape an Upper Deck checklist URL and store the full set.
+Two import paths behind one URL field:
+  * an Upper Deck checklist page (HTML table) — scraped with BeautifulSoup
+  * a Beckett-style .xlsx/.xls checklist file — parsed with openpyxl
+
 After any import, run reconciliation against unmatched cards in the collection.
 """
 import logging
 import re
 from datetime import datetime
+from io import BytesIO
+from urllib.parse import unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-from backend.config import SCRAPER_HEADERS
+from backend.config import DEFAULT_SPORT, SCRAPER_HEADERS, SPORTS
 from backend.models import Card, SetChecklist, SetChecklistCard
 from backend.schemas import ReconciliationResult
 
 logger = logging.getLogger(__name__)
+
+
+async def fetch_and_parse_url(url: str) -> dict | None:
+    """Parse a checklist URL with whichever reader matches it.
+
+    Returns the same dict shape from both paths:
+    {"set_name", "brand", "year", "sport", "cards": [...]}, or None on failure.
+    """
+    if _is_workbook_url(url):
+        return await fetch_xlsx_url(url)
+    return await scrape_upper_deck_url(url)
+
+
+def _is_workbook_url(url: str) -> bool:
+    return urlparse(url).path.lower().endswith((".xlsx", ".xls"))
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +96,8 @@ def _parse_upper_deck_html(html: str, url: str) -> dict | None:
         logger.warning("Table found but no cards parsed at %s", url)
         return None
 
-    return {"set_name": set_name, "brand": brand, "year": year, "cards": cards}
+    # Upper Deck's checklists are hockey; the preview screen lets the user change it.
+    return {"set_name": set_name, "brand": brand, "year": year, "sport": "Hockey", "cards": cards}
 
 
 def _extract_set_metadata(soup: BeautifulSoup, url: str) -> tuple[str, str, int]:
@@ -163,6 +184,20 @@ def _column_index(headers: list[str]) -> dict[str, int]:
     return mapping
 
 
+def _card_type_from_flags(is_auto: bool, is_relic: bool, parallel_color: str | None, is_rookie: bool) -> str:
+    """Card type priority, shared by both import paths: auto/relic take priority,
+    then parallel (any parallel_color), then rookie, then base."""
+    if is_auto and is_relic:
+        return "patch_relic"
+    if is_auto:
+        return "autograph"
+    if parallel_color:
+        return "parallel"
+    if is_rookie:
+        return "rookie"
+    return "base"
+
+
 def _parse_row(cells: list, col: dict, set_name: str) -> dict | None:
     def cell(key, default=""):
         idx = col.get(key)
@@ -186,21 +221,11 @@ def _parse_row(cells: list, col: dict, set_name: str) -> dict | None:
     base_labels = {set_name.lower(), "base", "base set", "base set - rookies", ""}
     parallel_color = variant if (variant and variant.lower() not in base_labels) else None
 
-    # Card type — auto/relic take priority, then parallel (any parallel_color), then rookie, then base
     is_rookie = cell("rookie") not in ("", "0", "No", "N")
     is_auto = cell("auto") not in ("", "0", "No", "N")
     is_relic = cell("relic") not in ("", "0", "No", "N")
 
-    if is_auto and is_relic:
-        card_type = "patch_relic"
-    elif is_auto:
-        card_type = "autograph"
-    elif parallel_color:
-        card_type = "parallel"
-    elif is_rookie:
-        card_type = "rookie"
-    else:
-        card_type = "base"
+    card_type = _card_type_from_flags(is_auto, is_relic, parallel_color, is_rookie)
 
     # Print run
     print_run_raw = cell("print_run")
@@ -224,6 +249,149 @@ def _parse_row(cells: list, col: dict, set_name: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# .xlsx checklist reader (Beckett-hosted workbooks)
+# ---------------------------------------------------------------------------
+
+_TEAM_SETS_SHEET = "team sets"
+_XLSX_HEADER_LABELS = {"card #", "card#", "card number", "card no", "#"}
+_BRAND_KEYWORDS = [
+    "Upper Deck", "Topps", "Bowman", "Panini", "Donruss", "Leaf", "Fleer", "Score",
+]
+
+
+async def fetch_xlsx_url(url: str) -> dict | None:
+    """Download an .xlsx/.xls checklist and parse its "Team Sets" sheet."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=SCRAPER_HEADERS) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.warning("Checklist file returned %s: %s", resp.status_code, url)
+                return None
+            return parse_xlsx(resp.content, url)
+    except httpx.TimeoutException:
+        logger.warning("Timeout fetching checklist file: %s", url)
+        return None
+    except Exception as exc:
+        logger.warning("Error fetching checklist file %s: %s", url, exc)
+        return None
+
+
+def parse_xlsx(data: bytes, url: str) -> dict | None:
+    """Parse a checklist workbook.
+
+    The "Team Sets" sheet holds one row per card:
+    [Subset Name] | [Card #] | [Player] | [Team] | [RC flag]
+    """
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        logger.warning("Could not open workbook %s: %s", url, exc)
+        return None
+
+    sheet = next((wb[n] for n in wb.sheetnames if n.strip().lower() == _TEAM_SETS_SHEET), None)
+    if sheet is None:
+        logger.warning("No 'Team Sets' sheet in %s (sheets: %s)", url, wb.sheetnames)
+        return None
+
+    set_name, brand, year, sport = _metadata_from_filename(url)
+
+    cards = []
+    for row in sheet.iter_rows(values_only=True):
+        card = _parse_xlsx_row(row, set_name)
+        if card:
+            cards.append(card)
+
+    if not cards:
+        logger.warning("'Team Sets' sheet found but no cards parsed at %s", url)
+        return None
+
+    return {"set_name": set_name, "brand": brand, "year": year, "sport": sport, "cards": cards}
+
+
+def _parse_xlsx_row(row: tuple, set_name: str) -> dict | None:
+    def cell(i: int) -> str:
+        return str(row[i]).strip() if i < len(row) and row[i] is not None else ""
+
+    subset, card_number, player_name = cell(0), cell(1).lstrip("#"), cell(2)
+    if not card_number or not player_name:
+        return None
+    if card_number.lower() in _XLSX_HEADER_LABELS or player_name.lower() in ("player", "player name", "description"):
+        return None
+
+    team = cell(3) or None
+    rc_flag = cell(4)
+
+    card_type, parallel_color, is_rookie, is_auto = _classify_subset(subset, set_name)
+    is_rookie = is_rookie or rc_flag.lower() in ("rc", "yes", "y", "true", "1", "rookie")
+    if card_type == "base" and is_rookie:
+        card_type = "rookie"
+
+    # Print run isn't carried on this sheet — left null (nullable field).
+    return {
+        "card_number": card_number,
+        "player_name": player_name,
+        "is_rookie": is_rookie,
+        "has_auto": is_auto,
+        "is_serialed": False,
+        "team": team,
+        "card_type": card_type,
+        "parallel_color": parallel_color,
+        "print_run": None,
+    }
+
+
+def _classify_subset(subset: str, set_name: str) -> tuple[str, str | None, bool, bool]:
+    """Derive (card_type, parallel_color, is_rookie, has_auto) from a subset name.
+
+    Same keyword priority as the Upper Deck parser, but every signal comes from
+    the one subset-name column instead of dedicated flag columns.
+    """
+    subset = (subset or "").strip()
+    low = subset.lower()
+
+    is_auto   = "auto" in low or "signature" in low
+    is_relic  = any(k in low for k in ("relic", "patch", "jersey", "memorabilia"))
+    is_rookie = bool(re.search(r"\b(rc|rookie|rookies)\b", low))
+
+    base_labels = {set_name.lower(), "base", "base set", "base set - rookies", ""}
+    is_base = low in base_labels
+    # A relic/auto subset names the hit, not a colour parallel.
+    parallel_color = None if (is_base or is_auto or is_relic) else (subset or None)
+
+    # patch_relic covers both auto+relic and relic-only subsets; everything else
+    # follows the shared priority chain.
+    card_type = "patch_relic" if is_relic else _card_type_from_flags(is_auto, False, parallel_color, is_rookie)
+    return card_type, parallel_color, is_rookie, is_auto
+
+
+def _metadata_from_filename(url: str) -> tuple[str, str, int, str]:
+    """Best-effort set name / brand / year / sport from the file name.
+
+    Guesses are shown editable on the import preview screen, so being wrong here
+    is a correction the user makes rather than a failed import.
+    """
+    name = unquote(urlparse(url).path.rstrip("/").split("/")[-1])
+    name = re.sub(r"\.xlsx?$", "", name, flags=re.I)
+    words = " ".join(re.sub(r"[-_]+", " ", name).split())
+    low = words.lower()
+
+    year_match = re.search(r"(19|20)\d{2}", words)
+    year = int(year_match.group(0)) if year_match else datetime.utcnow().year
+    sport = next((s for s in SPORTS if s.lower() in low), DEFAULT_SPORT)
+    brand = next((b for b in _BRAND_KEYWORDS if b.lower() in low), "")
+
+    set_name = re.sub(r"\b(19|20)\d{2}(-\d{2})?\b", " ", words)
+    set_name = re.sub(
+        r"\b(checklist|cards?|" + "|".join(SPORTS) + r")\b", " ", set_name, flags=re.I
+    )
+    set_name = " ".join(set_name.split()) or words
+
+    return set_name, brand or set_name.split(" ")[0], year, sport
+
+
+# ---------------------------------------------------------------------------
 # Save to DB + reconciliation
 # ---------------------------------------------------------------------------
 
@@ -234,6 +402,7 @@ def save_set_and_reconcile(
         set_name=parsed["set_name"],
         brand=parsed["brand"],
         year=parsed["year"],
+        sport=parsed.get("sport") or DEFAULT_SPORT,
         total_cards=len(parsed["cards"]),
         source_url=source_url,
         imported_at=datetime.utcnow(),

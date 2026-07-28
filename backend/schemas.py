@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 CardType = Literal["base", "rookie", "parallel", "autograph", "patch_relic"]
 Condition = Literal["poor", "good", "very_good", "excellent", "near_mint", "mint"]
+Sport = Literal["Hockey", "Baseball", "Football"]
 
 
 class CardBase(BaseModel):
@@ -15,6 +16,7 @@ class CardBase(BaseModel):
     team: str | None = None
     position: str | None = None
     card_type: CardType = "base"
+    sport: Sport = "Hockey"
     parallel_color: str | None = None
     print_run: int | None = None
     condition: Condition = "near_mint"
@@ -43,6 +45,7 @@ class CardUpdate(BaseModel):
     team: str | None = None
     position: str | None = None
     card_type: CardType | None = None
+    sport: Sport | None = None
     parallel_color: str | None = None
     print_run: int | None = None
     condition: Condition | None = None
@@ -139,6 +142,7 @@ class SetChecklistOut(BaseModel):
     set_name: str
     brand: str
     year: int
+    sport: Sport = "Hockey"
     total_cards: int
     source_url: str | None = None
     imported_at: datetime
@@ -154,6 +158,7 @@ class SetImportPreview(BaseModel):
     set_name: str
     brand: str
     year: int
+    sport: Sport = "Hockey"
     card_count: int
     source_url: str
 
@@ -169,12 +174,18 @@ class SetImportResult(BaseModel):
     set_name: str
     brand: str
     year: int
+    sport: Sport = "Hockey"
     card_count: int
     reconciliation: ReconciliationResult
 
 
 class ImportUrlRequest(BaseModel):
+    """URL plus optional corrections made on the preview screen."""
     url: str
+    set_name: str | None = None
+    brand: str | None = None
+    year: int | None = None
+    sport: Sport | None = None
 
 
 class PreviewUrlRequest(BaseModel):

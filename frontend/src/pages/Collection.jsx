@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getCards, getListingSummaries, refreshListingSummary, toggleWatchlist } from '../api/client'
+import { exportWhatnotCsv, getActiveListings, getCards, getListingSummaries, refreshListingSummary, toggleWatchlist } from '../api/client'
 import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 
 const TYPE_LABELS = { base:'Base', rookie:'RC', parallel:'Parallel', autograph:'Auto', patch_relic:'Patch' }
@@ -21,9 +21,14 @@ export default function Collection() {
   const [selectMode, setSelectMode]     = useState(false)
   const [selectedIds, setSelectedIds]   = useState(new Set())
   const [showDraftModal, setShowDraftModal] = useState(false)
+  const [showWhatnotModal, setShowWhatnotModal] = useState(false)
 
-  // Structured filters (applied client-side, cascading under Set)
-  const [filters, setFilters] = useState({ set: '', cardType: '', parallel: '', player: '', team: '' })
+  // Structured filters (applied client-side, cascading under Sport → Set)
+  const [filters, setFilters] = useState({ sport: '', set: '', cardType: '', parallel: '', player: '', team: '' })
+
+  // eBay value sort/filter (uses the high end of each card's listing range)
+  const [sortBy, setSortBy]     = useState('default')  // 'default' | 'value_desc' | 'value_asc'
+  const [minValue, setMinValue] = useState('')
 
   // eBay active-listing summaries: card_id -> { low, high, count, listings, stale }
   const [summaries, setSummaries]   = useState({})
@@ -41,7 +46,9 @@ export default function Collection() {
     getListingSummaries()
       .then(({ data }) => {
         const map = {}
-        for (const s of data) map[s.card_id] = s
+        // Drop the (empty) listings array so `listings === undefined` means
+        // "not loaded yet" — the carousel lazy-loads it on tap.
+        for (const s of data) { const { listings, ...rest } = s; map[s.card_id] = rest }
         setSummaries(map)
       })
       .catch(() => {})
@@ -68,6 +75,20 @@ export default function Collection() {
     setCards(cs => cs.map(c => c.id === id ? data : c))
   }
 
+  // Tap a price to expand its listing carousel. Listings aren't shipped in the
+  // bulk summaries (memory), so lazy-load this one card's set on first expand.
+  // getActiveListings is cache-aware — no eBay call unless the cache is stale.
+  async function toggleExpand(card) {
+    if (expandedId === card.id) { setExpandedId(null); return }
+    setExpandedId(card.id)
+    const s = summaries[card.id]
+    if (s?.listings?.length) return
+    try {
+      const { data } = await getActiveListings(card.id)
+      setSummaries(prev => ({ ...prev, [card.id]: { ...(prev[card.id] || {}), listings: data } }))
+    } catch { /* leave carousel empty on error */ }
+  }
+
   function handleCardClick(card) {
     if (selectMode) {
       if (card.is_selling || card.is_sold) return  // can't relist listed/sold cards
@@ -89,17 +110,23 @@ export default function Collection() {
   function setFilter(key, value) {
     setFilters(prev => {
       const next = { ...prev, [key]: value }
-      // Changing the set resets the dependent filters so options stay valid
-      if (key === 'set') { next.cardType = ''; next.parallel = ''; next.player = ''; next.team = '' }
+      // Changing the sport (or the set) resets everything below it so options stay valid
+      if (key === 'sport') next.set = ''
+      if (key === 'sport' || key === 'set') { next.cardType = ''; next.parallel = ''; next.player = ''; next.team = '' }
       return next
     })
   }
 
   // ── Cascading filter options ────────────────────────────────────────────────
-  const setOptions = useMemo(() => uniq(cards.map(c => c.set_name)), [cards])
+  const sportCards = useMemo(
+    () => filters.sport ? cards.filter(c => c.sport === filters.sport) : cards,
+    [cards, filters.sport]
+  )
+  const sportOptions = useMemo(() => uniq(cards.map(c => c.sport)), [cards])
+  const setOptions = useMemo(() => uniq(sportCards.map(c => c.set_name)), [sportCards])
   const scopedCards = useMemo(
-    () => filters.set ? cards.filter(c => c.set_name === filters.set) : cards,
-    [cards, filters.set]
+    () => filters.set ? sportCards.filter(c => c.set_name === filters.set) : sportCards,
+    [sportCards, filters.set]
   )
   const typeOptions     = useMemo(() => uniq(scopedCards.map(c => c.card_type)), [scopedCards])
   const parallelOptions = useMemo(() => uniq(scopedCards.map(c => c.parallel_color)), [scopedCards])
@@ -107,6 +134,7 @@ export default function Collection() {
   const teamOptions     = useMemo(() => uniq(scopedCards.map(c => c.team)), [scopedCards])
 
   const filteredCards = useMemo(() => cards.filter(c =>
+    (!filters.sport    || c.sport === filters.sport) &&
     (!filters.set      || c.set_name === filters.set) &&
     (!filters.cardType || c.card_type === filters.cardType) &&
     (!filters.parallel || c.parallel_color === filters.parallel) &&
@@ -114,7 +142,26 @@ export default function Collection() {
     (!filters.team     || c.team === filters.team)
   ), [cards, filters])
 
-  const anyFilter = filters.set || filters.cardType || filters.parallel || filters.player || filters.team
+  // Apply eBay-value min filter + sort as a display layer (price fetch still uses filteredCards)
+  const displayCards = useMemo(() => {
+    const min = parseFloat(minValue)
+    let list = filteredCards
+    if (!isNaN(min)) list = list.filter(c => (summaries[c.id]?.high ?? -Infinity) >= min)
+    if (sortBy !== 'default') {
+      list = [...list].sort((a, b) => {
+        const va = summaries[a.id]?.high, vb = summaries[b.id]?.high
+        // cards without a fetched value sort to the bottom either way
+        if (va == null && vb == null) return 0
+        if (va == null) return 1
+        if (vb == null) return -1
+        return sortBy === 'value_desc' ? vb - va : va - vb
+      })
+    }
+    return list
+  }, [filteredCards, summaries, sortBy, minValue])
+
+  const anyFilter = filters.sport || filters.set || filters.cardType || filters.parallel || filters.player || filters.team
+  const anyValueFilter = sortBy !== 'default' || minValue !== ''
   const selectedCards = cards.filter(c => selectedIds.has(c.id))
 
   // ── Pull eBay prices for the filtered cards (throttled, cache-aware) ─────────
@@ -164,8 +211,12 @@ export default function Collection() {
         onChange={e => setSearch(e.target.value)}
         className="w-full bg-[#1A2E45] text-white placeholder-[#94A3B8] rounded-xl px-4 py-3 mb-3 outline-none focus:ring-2 focus:ring-[#A8DADC]" />
 
-      {/* ── Filters: Set first, then Type / Parallel / Player / Team ─────────── */}
+      {/* ── Filters: Sport → Set, then Type / Parallel / Player / Team ───────── */}
       <div className="grid grid-cols-2 gap-2 mb-3">
+        <select value={filters.sport} onChange={e => setFilter('sport', e.target.value)} className={`${selectCls} col-span-2`}>
+          <option value="">All sports</option>
+          {sportOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <select value={filters.set} onChange={e => setFilter('set', e.target.value)} className={`${selectCls} col-span-2`}>
           <option value="">All sets</option>
           {setOptions.map(s => <option key={s} value={s}>{s}</option>)}
@@ -188,6 +239,18 @@ export default function Collection() {
         </select>
       </div>
 
+      {/* ── eBay value sort / filter ────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-3">
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={`${selectCls} flex-1`}>
+          <option value="default">Sort: Default</option>
+          <option value="value_desc">eBay value: High → Low</option>
+          <option value="value_asc">eBay value: Low → High</option>
+        </select>
+        <input type="number" inputMode="decimal" placeholder="Min $" value={minValue}
+          onChange={e => setMinValue(e.target.value)}
+          className="bg-[#1A2E45] text-white text-sm rounded-xl px-3 py-2 w-24 outline-none focus:ring-2 focus:ring-[#A8DADC] placeholder-[#94A3B8]" />
+      </div>
+
       {/* ── eBay price pull ─────────────────────────────────────────────────── */}
       {!loading && filteredCards.length > 0 && (
         <div className="flex items-center gap-3 mb-4">
@@ -200,8 +263,8 @@ export default function Collection() {
           {pricedCount > 0 && !pricesLoading && (
             <span className="text-[#4A6080] text-xs">{pricedCount} priced · cached 7 days</span>
           )}
-          {anyFilter && (
-            <button onClick={() => setFilters({ set: '', cardType: '', parallel: '', player: '', team: '' })}
+          {(anyFilter || anyValueFilter) && (
+            <button onClick={() => { setFilters({ sport: '', set: '', cardType: '', parallel: '', player: '', team: '' }); setSortBy('default'); setMinValue('') }}
               className="text-[#94A3B8] text-xs underline ml-auto">Clear filters</button>
           )}
         </div>
@@ -222,18 +285,21 @@ export default function Collection() {
 
       {loading && <p className="text-[#94A3B8] text-center py-8">Loading…</p>}
 
-      {!loading && filteredCards.length === 0 && (
+      {!loading && displayCards.length === 0 && (
         <div className="text-center py-16 text-[#94A3B8]">
           <p className="text-4xl mb-4">🏒</p>
           <p className="text-lg">
-            {anyFilter ? 'No cards match these filters.' : showUnmatched ? 'No unmatched cards.' : 'No cards yet.'}
+            {minValue !== '' ? 'No priced cards meet that minimum value.'
+              : anyFilter ? 'No cards match these filters.'
+              : showUnmatched ? 'No unmatched cards.' : 'No cards yet.'}
           </p>
-          {!showUnmatched && !anyFilter && <p className="text-sm mt-1">Tap <strong className="text-white">Add Card</strong> to get started.</p>}
+          {minValue !== '' && <p className="text-sm mt-1">Tap <strong className="text-white">Get eBay Prices</strong> first to value your cards.</p>}
+          {!showUnmatched && !anyFilter && minValue === '' && <p className="text-sm mt-1">Tap <strong className="text-white">Add Card</strong> to get started.</p>}
         </div>
       )}
 
       <ul className="space-y-3">
-        {filteredCards.map(card => {
+        {displayCards.map(card => {
           const isSelected = selectedIds.has(card.id)
           const unlistable = card.is_selling || card.is_sold
           const summary = summaries[card.id]
@@ -277,7 +343,7 @@ export default function Collection() {
                     ? <span className="text-[#4A6080] text-xs">…</span>
                     : summary?.count > 0
                       ? <button
-                          onClick={(e) => { e.stopPropagation(); setExpandedId(expanded ? null : card.id) }}
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(card) }}
                           className="text-right">
                           <span className="block text-[#A8DADC] text-sm font-bold whitespace-nowrap">
                             ${summary.low.toFixed(0)}–${summary.high.toFixed(0)}
@@ -300,7 +366,13 @@ export default function Collection() {
                 )}
               </div>
 
-              {/* ── Expanded live-listing carousel ──────────────────────────── */}
+              {/* ── Expanded live-listing carousel (lazy-loaded on tap) ─────── */}
+              {expanded && summary?.listings === undefined && (
+                <div className="px-4 pb-4 -mt-1 text-[#4A6080] text-xs">Loading listings…</div>
+              )}
+              {expanded && summary?.listings?.length === 0 && (
+                <div className="px-4 pb-4 -mt-1 text-[#4A6080] text-xs">No current listings.</div>
+              )}
               {expanded && summary?.listings?.length > 0 && (
                 <div className="px-4 pb-4 -mt-1">
                   <div className="flex gap-3 overflow-x-auto -mx-1 px-1 pb-2
@@ -342,12 +414,20 @@ export default function Collection() {
                 : `${selectedIds.size} card${selectedIds.size > 1 ? 's' : ''} selected`}
             </p>
             {selectedIds.size > 0 && (
-              <button
-                onClick={() => setShowDraftModal(true)}
-                className="bg-[#A8DADC] text-[#0D1B2A] font-semibold text-sm px-4 py-2 rounded-xl"
-              >
-                List on eBay
-              </button>
+              <>
+                <button
+                  onClick={() => setShowWhatnotModal(true)}
+                  className="bg-[#1A2E45] text-[#A8DADC] border border-[#A8DADC]/40 font-semibold text-sm px-4 py-2 rounded-xl"
+                >
+                  Export to Whatnot
+                </button>
+                <button
+                  onClick={() => setShowDraftModal(true)}
+                  className="bg-[#A8DADC] text-[#0D1B2A] font-semibold text-sm px-4 py-2 rounded-xl"
+                >
+                  List on eBay
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -360,6 +440,91 @@ export default function Collection() {
           onSuccess={() => { exitSelectMode(); fetchCards() }}
         />
       )}
+
+      {showWhatnotModal && selectedCards.length > 0 && (
+        <ExportWhatnotModal
+          cards={selectedCards}
+          onClose={() => setShowWhatnotModal(false)}
+          onSuccess={() => { exitSelectMode(); fetchCards() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ExportWhatnotModal({ cards, onClose, onSuccess }) {
+  const [startPrice, setStartPrice] = useState('1.00')
+  const [busy, setBusy]   = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleExport() {
+    const price = parseFloat(startPrice)
+    if (isNaN(price) || price <= 0) { setError('Enter a starting bid greater than 0.'); return }
+    setBusy(true)
+    setError('')
+    try {
+      const resp = await exportWhatnotCsv({ card_ids: cards.map(c => c.id), start_price: price })
+
+      // Trigger the file download from the returned blob
+      const disp = resp.headers['content-disposition'] || ''
+      const match = disp.match(/filename="?([^"]+)"?/)
+      const filename = match ? match[1] : 'whatnot-export.csv'
+      const url = URL.createObjectURL(resp.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+
+      const missing = parseInt(resp.headers['x-whatnot-missing-images'] || '0', 10)
+      if (missing > 0) {
+        alert(`${cards.length} card${cards.length > 1 ? 's' : ''} exported.\n\n${missing} card${missing > 1 ? 's have' : ' has'} no public image URL — add photos in Whatnot after importing the CSV.`)
+      }
+      onSuccess()
+    } catch (err) {
+      // Error bodies come back as a blob because responseType is 'blob'
+      let detail = 'Export failed.'
+      try {
+        const text = await err.response?.data?.text?.()
+        if (text) detail = JSON.parse(text).detail || detail
+      } catch { /* keep default */ }
+      setError(detail)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4"
+      onClick={onClose}>
+      <div className="bg-[#1A2E45] rounded-2xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <h2 className="text-white text-lg font-bold mb-1">Export to Whatnot</h2>
+        <p className="text-[#94A3B8] text-sm mb-4">
+          {cards.length} card{cards.length > 1 ? 's' : ''} → one Auction listing each. Downloads a CSV you
+          import in Whatnot Seller Hub → Bulk Upload, then assign to your show.
+        </p>
+
+        <label className="block text-[#94A3B8] text-xs mb-1">Opening bid (per card)</label>
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-white">$</span>
+          <input type="number" inputMode="decimal" step="0.01" min="0.01" value={startPrice}
+            onChange={e => setStartPrice(e.target.value)}
+            className="flex-1 bg-[#0D1B2A] text-white rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[#A8DADC]" />
+        </div>
+
+        {error && <p className="text-[#EF4444] text-sm mb-3">{error}</p>}
+
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="flex-1 bg-[#0D1B2A] text-[#94A3B8] font-medium py-3 rounded-xl disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={handleExport} disabled={busy}
+            className="flex-1 bg-[#A8DADC] text-[#0D1B2A] font-semibold py-3 rounded-xl disabled:opacity-50">
+            {busy ? 'Exporting…' : 'Download CSV'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

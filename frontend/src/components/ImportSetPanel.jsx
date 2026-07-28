@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react'
 import { importUrl, previewUrl } from '../api/client'
 
+const SPORTS = ['Hockey', 'Baseball', 'Football']
+const READ_ERROR = 'Could not read that URL. Use an Upper Deck checklist page or a direct link to an .xlsx checklist file.'
+
 /**
- * URL paste → preview → confirm → import flow.
+ * URL paste → preview (editable) → confirm → import flow.
  * onImported(result) called after successful import.
  */
 export default function ImportSetPanel({ onImported, onCancel }) {
@@ -23,17 +26,26 @@ export default function ImportSetPanel({ onImported, onCancel }) {
       setPreview({ ...data, url })
       setStage('preview')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not read that URL. Make sure it\'s an Upper Deck checklist page.')
+      setError(err.response?.data?.detail || READ_ERROR)
     } finally {
       setLoading(false)
     }
+  }
+
+  function setField(key, value) {
+    setPreview(p => ({ ...p, [key]: value }))
   }
 
   async function handleImport() {
     setStage('importing')
     setError(null)
     try {
-      const { data } = await importUrl(preview.url)
+      const { data } = await importUrl(preview.url, {
+        set_name: preview.set_name,
+        brand:    preview.brand,
+        year:     parseInt(preview.year) || undefined,
+        sport:    preview.sport,
+      })
       onImported(data)
     } catch (err) {
       setError(err.response?.data?.detail || 'Import failed.')
@@ -44,7 +56,7 @@ export default function ImportSetPanel({ onImported, onCancel }) {
   return (
     <div className="bg-[#1A2E45] rounded-2xl p-5">
       <h2 className="text-white font-semibold mb-1">Import Set Checklist</h2>
-      <p className="text-[#94A3B8] text-sm mb-4">Paste an Upper Deck checklist URL to import the full set.</p>
+      <p className="text-[#94A3B8] text-sm mb-4">Paste an Upper Deck checklist URL, or a link to an .xlsx checklist file, to import the full set.</p>
 
       {stage === 'input' && (
         <form onSubmit={handlePreview} className="space-y-3">
@@ -76,9 +88,32 @@ export default function ImportSetPanel({ onImported, onCancel }) {
 
       {stage === 'preview' && preview && (
         <div className="space-y-4">
-          <div className="bg-[#0D1B2A] rounded-xl p-4">
-            <p className="text-white font-semibold">{preview.set_name}</p>
-            <p className="text-[#94A3B8] text-sm mt-1">{preview.brand} · {preview.year} · {preview.card_count} cards</p>
+          <div className="bg-[#0D1B2A] rounded-xl p-4 space-y-3">
+            <div>
+              <label className="block text-[#94A3B8] text-xs mb-1">Set name</label>
+              <input type="text" value={preview.set_name} onChange={e => setField('set_name', e.target.value)}
+                className="w-full bg-[#1A2E45] text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A8DADC]" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[#94A3B8] text-xs mb-1">Brand</label>
+                <input type="text" value={preview.brand} onChange={e => setField('brand', e.target.value)}
+                  className="w-full bg-[#1A2E45] text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A8DADC]" />
+              </div>
+              <div>
+                <label className="block text-[#94A3B8] text-xs mb-1">Year</label>
+                <input type="number" value={preview.year} onChange={e => setField('year', e.target.value)}
+                  className="w-full bg-[#1A2E45] text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A8DADC]" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[#94A3B8] text-xs mb-1">Sport</label>
+              <select value={preview.sport} onChange={e => setField('sport', e.target.value)}
+                className="w-full bg-[#1A2E45] text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A8DADC]">
+                {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <p className="text-[#94A3B8] text-xs">{preview.card_count} cards found</p>
           </div>
           <p className="text-white text-sm text-center">Import this set?</p>
           {error && <p className="text-red-400 text-sm">{error}</p>}

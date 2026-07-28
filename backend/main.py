@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from backend.config import PHOTOS_DIR
 from backend.database import Base, engine
-from backend.routers import alerts, autocomplete, cards, dashboard, ebay, grading, selling, sets, settings, values
+from backend.routers import alerts, autocomplete, cards, dashboard, ebay, grading, selling, sets, settings, strategy, values, whatnot
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,10 +26,15 @@ def _run_migrations():
             ("listing_date",     "ALTER TABLE cards ADD COLUMN listing_date DATETIME"),
             ("listing_url",      "ALTER TABLE cards ADD COLUMN listing_url VARCHAR"),
             ("is_sold",          "ALTER TABLE cards ADD COLUMN is_sold BOOLEAN DEFAULT 0"),
+            ("sport",            "ALTER TABLE cards ADD COLUMN sport VARCHAR DEFAULT 'Hockey'"),
         ]
         for col, sql in new_cols:
             if col not in existing:
                 conn.execute(text(sql))
+
+        set_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(set_checklists)"))}
+        if set_cols and "sport" not in set_cols:
+            conn.execute(text("ALTER TABLE set_checklists ADD COLUMN sport VARCHAR DEFAULT 'Hockey'"))
 
         listing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ebay_draft_listings)"))}
         for col, sql in [
@@ -65,6 +70,8 @@ app.include_router(selling.router)
 app.include_router(alerts.router)
 app.include_router(settings.router)
 app.include_router(ebay.router)
+app.include_router(whatnot.router)
+app.include_router(strategy.router)
 
 
 @app.on_event("startup")

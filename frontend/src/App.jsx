@@ -9,6 +9,7 @@ import SetChecklists from './pages/SetChecklists'
 import SetDetail from './pages/SetDetail'
 import Settings from './pages/Settings'
 import SellingDashboard from './pages/SellingDashboard'
+import Strategy from './pages/Strategy'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/sets"       element={<SetChecklists />} />
           <Route path="/sets/:id"   element={<SetDetail />} />
           <Route path="/selling"    element={<SellingDashboard />} />
+          <Route path="/strategy"   element={<Strategy />} />
           <Route path="/alerts"     element={<Alerts />} />
           <Route path="/settings"   element={<Settings />} />
         </Routes>

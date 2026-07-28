@@ -7,7 +7,15 @@ from urllib.parse import urlencode
 import httpx
 from sqlalchemy.orm import Session
 
-from backend.config import EBAY_APP_ID, EBAY_CERT_ID, EBAY_RU_NAME, EBAY_SHIP_PRICE, EBAY_ZIP
+from backend.config import (
+    DEFAULT_SPORT,
+    EBAY_APP_ID,
+    EBAY_CERT_ID,
+    EBAY_LEAGUE_BY_SPORT,
+    EBAY_RU_NAME,
+    EBAY_SHIP_PRICE,
+    EBAY_ZIP,
+)
 from backend.models import Card, DraftListingCard, EbayDraftListing, EbayToken
 
 logger = logging.getLogger(__name__)
@@ -21,7 +29,7 @@ _LOCATION_URL    = "https://api.ebay.com/sell/inventory/v1/location"
 _TAXONOMY_BASE   = "https://api.ebay.com/commerce/taxonomy/v1"
 _METADATA_BASE   = "https://api.ebay.com/sell/metadata/v1"
 
-_category_id_cache:  str | None = None
+_category_id_cache:  dict[str, str] = {}   # sport -> singles category id
 _pwe_policy_id:      str | None = None
 _ground_policy_id:   str | None = None
 _return_policy_id:   str | None = None
@@ -177,6 +185,11 @@ def get_user_token(db: Session) -> str | None:
     return token.access_token
 
 
+def _sport_of(cards: list) -> str:
+    """The sport shared by every card in a listing (mixed lots are blocked upstream)."""
+    return cards[0].sport or DEFAULT_SPORT
+
+
 def build_title(cards: list) -> str:
     if len(cards) == 1:
         c = cards[0]
@@ -187,10 +200,11 @@ def build_title(cards: list) -> str:
             parts.append(c.card_type.replace("_", " ").title())
         return " ".join(parts)[:80]
 
+    sport = _sport_of(cards)
     players = list(dict.fromkeys(c.player_name for c in cards))
     if len(players) == 1:
-        return f"{len(cards)}x {players[0]} Hockey Cards Lot"[:80]
-    return f"{len(cards)}x Hockey Cards Lot - Mixed Players"[:80]
+        return f"{len(cards)}x {players[0]} {sport} Cards Lot"[:80]
+    return f"{len(cards)}x {sport} Cards Lot - Mixed Players"[:80]
 
 
 def build_description(cards: list) -> str:
@@ -213,7 +227,7 @@ def build_description(cards: list) -> str:
         lines.append("\nSee photos for condition details. Ships in a penny sleeve inside a top loader.")
         return "\n".join(lines)
 
-    lines = [f"Lot of {len(cards)} hockey cards.\n"]
+    lines = [f"Lot of {len(cards)} {_sport_of(cards).lower()} cards.\n"]
     for i, c in enumerate(cards, 1):
         cond = c.condition.replace("_", " ").title()
         entry = f"{i}. {c.year} {c.brand} #{c.card_number} {c.player_name} ({cond})"
@@ -238,25 +252,24 @@ _FALLBACK_CATEGORY_ID  = "261328"  # Sports Trading Cards > Trading Card Singles
 _LOT_CATEGORY_ID       = "261329"  # Sports Trading Cards > Trading Card Lots (multi-card listings)
 
 
-def _get_hockey_category_id(token: str) -> str:
-    global _category_id_cache
-    if _category_id_cache:
-        return _category_id_cache
+def _get_singles_category_id(token: str, sport: str) -> str:
+    if sport in _category_id_cache:
+        return _category_id_cache[sport]
 
     with httpx.Client(timeout=10) as client:
         r = client.get(
             f"{_TAXONOMY_BASE}/category_tree/0/get_category_suggestions",
             headers={"Authorization": f"Bearer {token}"},
-            params={"q": "hockey trading card"},
+            params={"q": f"{sport.lower()} trading card"},
         )
 
     if r.status_code == 200:
         suggestions = r.json().get("categorySuggestions", [])
         if suggestions:
             cat_id = suggestions[0]["category"]["categoryId"]
-            logger.info("eBay category resolved: %s (%s)",
+            logger.info("eBay category resolved for %s: %s (%s)", sport,
                         suggestions[0]["category"]["categoryName"], cat_id)
-            _category_id_cache = cat_id
+            _category_id_cache[sport] = cat_id
             return cat_id
 
     logger.warning("Category lookup failed (%s) — using fallback %s", r.status_code, _FALLBACK_CATEGORY_ID)
@@ -298,9 +311,10 @@ def _get_category_aspects(token: str, category_id: str) -> dict:
 def _build_aspects(cards: list, token: str, category_id: str) -> dict:
     """Build eBay item aspects, validating against the category's allowed values
     and auto-filling any required aspect we haven't set."""
+    sport = _sport_of(cards)
     aspects: dict[str, list[str]] = {
-        "Sport":  ["Hockey"],
-        "League": ["NHL"],
+        "Sport":  [sport],
+        "League": [EBAY_LEAGUE_BY_SPORT.get(sport, EBAY_LEAGUE_BY_SPORT[DEFAULT_SPORT])],
         "Type":   ["Sports Trading Card"],
         "Graded": ["No"],
     }
@@ -531,6 +545,15 @@ def create_draft(
         state = "sold" if all(c.is_sold for c in blocked) else "already listed/sold"
         raise ValueError(f"These cards are {state} and can't be listed again: {names}")
 
+    # One listing carries one Sport/League aspect pair and one category, so a lot
+    # has to be single-sport.
+    sports = sorted({c.sport or DEFAULT_SPORT for c in cards})
+    if len(sports) > 1:
+        raise ValueError(
+            f"A lot can only contain cards from one sport. Selected: {', '.join(sports)}. "
+            "List each sport as its own lot."
+        )
+
     token = get_user_token(db)
     if not token:
         raise ValueError("eBay account not connected. Connect in Settings first.")
@@ -568,7 +591,7 @@ def create_draft(
         raise ValueError(f"eBay requires HTTPS image URLs. Non-HTTPS URL: {non_https[0][:80]}")
 
     # Step 1: create/update inventory item
-    category_id = _LOT_CATEGORY_ID if is_lot else _get_hockey_category_id(token)
+    category_id = _LOT_CATEGORY_ID if is_lot else _get_singles_category_id(token, _sport_of(cards))
     aspects     = _build_aspects(cards, token, category_id)
 
     product: dict = {"title": final_title, "aspects": aspects}

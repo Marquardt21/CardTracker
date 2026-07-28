@@ -8,6 +8,7 @@ import UnmatchedReviewModal from '../components/UnmatchedReviewModal'
 
 const CARD_TYPES  = ['base', 'rookie', 'parallel', 'autograph', 'patch_relic']
 const CONDITIONS  = ['poor', 'good', 'very_good', 'excellent', 'near_mint', 'mint']
+const SPORTS      = ['Hockey', 'Baseball', 'Football']
 const TYPE_LABELS = { base: 'Base', rookie: 'Rookie', parallel: 'Parallel', autograph: 'Autograph', patch_relic: 'Patch / Relic' }
 const COND_LABELS = { poor: 'Poor', good: 'Good', very_good: 'Very Good', excellent: 'Excellent', near_mint: 'Near Mint', mint: 'Mint' }
 
@@ -28,6 +29,7 @@ export default function AddCard() {
     parallelColor: params.get('parallel') || '',
     printRun:      params.get('print_run') || '',
     team:          params.get('team') || '',
+    sport:         params.get('sport') || 'Hockey',
   }
 
   // ── Step 1: Set ─────────────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ export default function AddCard() {
   const [cardNumber,    setCardNumber]    = useState(prefillFromUrl.cardNumber)
   const [cardType,      setCardType]      = useState(prefillFromUrl.cardType || 'base')
   const [parallelColor, setParallelColor] = useState(prefillFromUrl.parallelColor || '')
+  const [sport,         setSport]         = useState(prefillFromUrl.sport || 'Hockey')
 
   // ── Uncontrolled fields (remounted via formKey when prefill changes) ─────────
   const [prefill,  setPrefill]  = useState(prefillFromUrl)
@@ -115,6 +118,7 @@ export default function AddCard() {
     setSelectedSet(set)
     setSetOpen(false)
     setSelectedYear(String(set.year))
+    setSport(set.sport || 'Hockey')
     setPrefill(p => ({ ...p, brand: set.brand }))
     setFormKey(k => k + 1)
     setCardNumber('')
@@ -199,6 +203,7 @@ export default function AddCard() {
       card_number:      cardNumber || get('card_number') || '',
       team:             get('team') || null,
       card_type:        effectiveType,
+      sport:            sport,
       parallel_color:   parallelColor || null,
       print_run:        get('print_run') ? parseInt(get('print_run')) : null,
       condition:        get('condition') || 'near_mint',
@@ -244,7 +249,7 @@ export default function AddCard() {
     setSavedCard(null); setDuplicates(null); setPendingSave(null); setListed(false)
     setSetQuery(''); setSetOptions([]); setSetOpen(false); setSetActive(-1)
     setSelectedSet(null); setSelectedYear('')
-    setCardNumber(''); setCardType('base'); setParallelColor('')
+    setCardNumber(''); setCardType('base'); setParallelColor(''); setSport('Hockey')
     setShowSoldSection(false)
     setPrefill({ playerName: '', brand: '', year: '', setName: '', cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' })
     setError(null)
@@ -420,6 +425,14 @@ export default function AddCard() {
           fetchFn={cardFetchFn}
           renderItem={renderCardItem}
         />
+
+        {/* ── Sport ────────────────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-[#94A3B8] text-sm mb-1">Sport</label>
+          <select value={sport} onChange={e => setSport(e.target.value)} className={selectCls}>
+            {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
 
         {/* ── Type ─────────────────────────────────────────────────────────── */}
         <div>

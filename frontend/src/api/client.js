@@ -40,12 +40,18 @@ export const searchSets    = (q) => client.get('/sets/search', { params: { q } }
 export const getSet        = (id) => client.get(`/sets/${id}`)
 export const deleteSet     = (id) => client.delete(`/sets/${id}`)
 export const previewUrl    = (url) => client.post('/sets/preview-url', { url })
-export const importUrl     = (url) => client.post('/sets/import-url', { url })
+export const importUrl     = (url, overrides = {}) => client.post('/sets/import-url', { url, ...overrides })
 export const reconcile     = () => client.post('/sets/reconcile')
 
 // Grading
 export const getWatchlist      = () => client.get('/grading')
 export const generateGrading   = (id, service) => client.post(`/grading/${id}/generate`, { grading_service: service })
+
+// AI selling strategy
+// An agentic Claude run over the whole cohort — needs far longer than the 15s
+// default: up to STRATEGY_MAX_TOOL_CALLS (15) turns, and each tool call can be a
+// live eBay lookup, so a worst-case run runs for minutes.
+export const analyzeStrategy    = (card_ids) => client.post('/strategy/analyze', { card_ids }, { timeout: 300000 })
 
 // Dashboard / Alerts / Settings
 export const getDashboard  = () => client.get('/dashboard')
@@ -59,3 +65,6 @@ export const storeEbayUserToken = (token) => client.post('/ebay/auth/user-token'
 export const disconnectEbay     = () => client.delete('/ebay/auth/token')
 export const createEbayDraft    = (d) => client.post('/ebay/listings/draft', d)
 export const getEbayDrafts      = () => client.get('/ebay/listings')
+
+// Whatnot (CSV bulk-upload export)
+export const exportWhatnotCsv   = (d) => client.post('/whatnot/export', d, { responseType: 'blob' })

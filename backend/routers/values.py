@@ -17,12 +17,16 @@ router = APIRouter(prefix="/api", tags=["values"])
 
 
 def _row_to_summary(row: ActiveListingCache, cutoff: datetime) -> ListingSummaryOut:
+    # Deliberately omit the per-card `listings` array here: the Collection price
+    # column only needs low/high/count, and returning every card's full listings
+    # for the whole collection ships megabytes the browser then has to retain.
+    # The carousel lazy-loads one card's listings on tap via /active-listings.
     return ListingSummaryOut(
         card_id=row.card_id,
         low=row.low,
         high=row.high,
         count=row.count,
-        listings=_parse_listings(row.listings_json),
+        listings=[],
         fetched_at=row.fetched_at,
         stale=row.fetched_at < cutoff,
     )

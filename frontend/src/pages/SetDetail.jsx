@@ -24,6 +24,7 @@ export default function SetDetail() {
       set:    set.set_name,
       number: checklistCard.card_number,
       type:   checklistCard.card_type,
+      sport:  set.sport,
       ...(checklistCard.parallel_color ? { parallel: checklistCard.parallel_color } : {}),
       ...(checklistCard.print_run ? { print_run: String(checklistCard.print_run) } : {}),
       ...(checklistCard.team ? { team: checklistCard.team } : {}),

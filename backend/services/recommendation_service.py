@@ -7,7 +7,7 @@ asks Claude to recommend a selling price with reasoning.
 import json
 import logging
 
-from backend.config import ANTHROPIC_API_KEY
+from backend.config import ANTHROPIC_API_KEY, DEFAULT_SPORT
 from backend.models import Card, CardValue
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ def _build_prompt(card: Card, sold_values: list[CardValue]) -> str:
     print_run = f"/{card.print_run} (serialized)" if card.print_run else "Not serialized"
     condition = COND_LABELS.get(card.condition, card.condition)
     card_type = TYPE_LABELS.get(card.card_type, card.card_type)
+    sport = (card.sport or DEFAULT_SPORT).lower()
 
     if sold_values:
         sorted_values = sorted(sold_values, key=lambda v: v.fetched_at, reverse=True)
@@ -38,7 +39,7 @@ def _build_prompt(card: Card, sold_values: list[CardValue]) -> str:
     else:
         price_section = "No eBay sold data is currently available for this card."
 
-    return f"""You are an expert hockey card dealer and pricing specialist with deep knowledge of the sports card market.
+    return f"""You are an expert {sport} card dealer and pricing specialist with deep knowledge of the sports card market.
 
 A collector needs a selling price recommendation for the following card:
 

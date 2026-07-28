@@ -1,66 +1,10 @@
 # CLAUDE.md
 
-Behavioral guidelines and project context for AI assistants working in this repo.
+Project-specific context for AI assistants working in this repo. General behavioral guidelines (think before coding, simplicity, surgical changes, goal-driven execution) live in `~/.claude/CLAUDE.md` and apply here automatically — this file only covers what's specific to CardTracker.
 
----
+Building a new feature or fix here? Use `/feature` — it interviews you to nail down the spec (following the global guidelines above), then hands off to the `feature-builder` subagent (Opus by default) to implement it. Both are defined globally in `~/.claude/` so they work the same way in other projects too.
 
-## Coding Behavior
-
-### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+Detailed per-feature specs (what each area does, key files, non-goals, and why non-obvious decisions were made) live in [docs/specs/](docs/specs/) — this file stays a quick-reference summary; docs/specs/ has the depth.
 
 ---
 
@@ -68,7 +12,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### What This Is
 
-A personal NHL hockey card collection manager for home use. Two users (father and son) share the collection. The app runs on an Ubuntu PC and is accessed via iPad browsers on the home WiFi. **Raw (ungraded) cards only.**
+A personal sports card collection manager for home use — hockey, baseball and football (every card and set carries a `sport`, defaulting to Hockey). Two users (father and son) share the collection. The app runs on an Ubuntu PC and is accessed via iPad browsers on the home WiFi. **Raw (ungraded) cards only.**
 
 Primary goals:
 - Track what cards we own and what they're worth
@@ -86,6 +30,7 @@ Primary goals:
 | HTTP client (FE) | Axios |
 | HTTP client (BE) | httpx |
 | Scraping | BeautifulSoup4 |
+| Checklist workbooks | openpyxl (`.xlsx` set imports) |
 | Charts | Recharts |
 | LLM | Anthropic (`claude-sonnet-4-6`) — optional AI card scan |
 
@@ -100,7 +45,7 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 - Upload a card photo directly from the app
 - Browse the collection with search, filter (player/team/brand/year/type/condition), and sort
 - "Unmatched" filter tab shows cards not yet linked to an official checklist — appears only when relevant
-- **Cascading filters** (client-side, on `Collection.jsx`): pick a Set first, then narrow by Type / Parallel / Player / Team. The dependent dropdowns' options are derived from the cards in the selected set; changing the set resets them.
+- **Cascading filters** (client-side, on `Collection.jsx`): pick a Sport, then a Set, then narrow by Type / Parallel / Player / Team. Each dropdown's options are derived from the cards still in scope; changing the sport resets the set and everything under it.
 - **Get eBay Prices** button: pulls live eBay asking-price summaries for every card in the current filtered view and shows a **low–high range + listing count** to the right of each row, all on one screen. Tap a price to expand the live BIN carousel inline. Fetch is throttled (3 concurrent). Selecting multiple cards (Select mode) → **List on eBay** still creates one lot listing.
 - Price summaries are **cached for 7 days** (`ACTIVE_LISTING_TTL_DAYS`, `active_listing_cache` table). Cached values pre-populate the column on load (`GET /api/listing-summaries`, read-only, no eBay calls); the button only re-fetches cards whose cache is missing or stale (`POST /api/cards/{id}/listing-summary`, `?force=true` to bypass TTL). Empty/rate-limited results are **not** persisted, so they retry next time.
 
@@ -118,6 +63,9 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 
 ### 3. Set Checklist Import & Tracking
 - User pastes an Upper Deck checklist URL; the app scrapes the page and imports all cards
+- **Or** pastes a link to an `.xlsx`/`.xls` checklist file (Beckett hosts these for most Topps/Panini releases) — detected by URL suffix, parsed from the workbook's "Team Sets" sheet (`openpyxl`). Card type / parallel / rookie come from the subset-name column; print run isn't on that sheet and stays null
+- The preview step is **editable** (set name / brand / year / sport) before confirming, since the xlsx path guesses its metadata from the filename
+- See [docs/specs/mlb-nfl-card-support.md](docs/specs/mlb-nfl-card-support.md)
 - After import, runs reconciliation: auto-links any unmatched collection cards to the new checklist
 - Set Detail view shows owned vs. needed cards; tapping an unowned card pre-fills the Add Card form
 - Set completion progress shows on Dashboard for any set where ≥10% is owned
@@ -154,6 +102,7 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
   4. Creates an offer and publishes it, scheduled 2 hours from now so user can add photos or cancel in Seller Hub
   5. Marks card(s) as `is_selling = true` in the DB; records listing URL
 - eBay auth: OAuth 2.0 flow via `/api/ebay/auth/start` → redirect → `/api/ebay/auth/callback`; tokens stored in `ebay_tokens` table; auto-refreshed when expired. A manual paste-a-token path also exists (`/api/ebay/auth/user-token`) but stores a **2-hour token with no refresh** — it will not overwrite a durable OAuth connection. Prefer the OAuth flow.
+- Sport-aware: the `Sport`/`League` aspects, the singles category-suggestion query and the lot title/description all key off the card's `sport` (Hockey→NHL, Baseball→MLB, Football→NFL, mapped in `config.EBAY_LEAGUE_BY_SPORT`). A lot mixing sports is rejected — one listing carries one Sport/League pair
 - Listing creation **blocks cards that are already listed or sold** (`is_selling`/`is_sold`); the Collection select UI also disables them. All cards in a listing are marked `is_selling` with the listing date/URL on publish.
 - Selling Dashboard groups by listing: a multi-card lot shows as **one row** using the listing title and the listing's price (per-card `listed_price` stays null for lots). Marking a lot sold (`PATCH /api/selling/listing/{id}/sold`) records one sale price + date on the `EbayDraftListing` and flips all its cards to sold; net profit = sold price − eBay fee (13.25% + $0.30). Single manual cards (listed via Card Detail without an eBay listing) still appear as their own group and use the per-card `PATCH /api/selling/{card_id}`.
 
@@ -167,6 +116,13 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 ### 8. Alerts
 - Dedicated Alerts page listing all price spikes above the configured threshold
 - Threshold configurable in `backend/config.py` (default 25%)
+
+### 9. Whatnot Export
+- Whatnot's Seller API is limited-release and unavailable to this account, so instead of listing directly, the app exports a Whatnot bulk-upload CSV (`POST /api/whatnot/export`) that's imported manually in Seller Hub → Bulk Upload
+- Each selected card becomes one Auction row with a configurable opening bid (default $1); title/description built the same way as the eBay lot builder
+- Whatnot rejects rows whose Category/Sub Category/Type/Condition/Shipping Profile don't exactly match the current bulk-upload template — all Whatnot-specific values live in one `config.py` block (`WHATNOT_*`) so they're a one-place fix against a freshly downloaded template. Sub Category is chosen by the card's sport (`WHATNOT_SUB_CATEGORY_BY_SPORT`) — still a best guess to verify against the real template
+- Same already-listed/sold guard as eBay listing; exported cards are marked `is_selling` with the channel tagged via `listing_url`
+- See [docs/specs/whatnot-export.md](docs/specs/whatnot-export.md) for detail
 
 ---
 
