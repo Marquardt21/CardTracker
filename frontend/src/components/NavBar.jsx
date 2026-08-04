@@ -5,6 +5,7 @@ const tabs = [
   { to: '/cards',   label: 'Collection', icon: '🏒' },
   { to: '/add',     label: 'Add Card',   icon: '➕' },
   { to: '/sets',    label: 'Sets',       icon: '📋' },
+  { to: '/pipeline',label: 'Pipeline',   icon: '🎬' },
   { to: '/selling', label: 'Selling',    icon: '🏷️'  },
   { to: '/strategy',label: 'Strategy',   icon: '🎯' },
   { to: '/settings',label: 'Settings',   icon: '⚙️'  },

@@ -1,0 +1,20 @@
+# This repo is checked out on both Linux and Windows. Line endings are normalised
+# to LF in the repository; git may still hand Windows a CRLF working copy for
+# ordinary text, but the files below must stay LF everywhere.
+* text=auto
+
+# A shell script with CRLF fails on Linux with "bad interpreter: no such file or
+# directory" — the \r becomes part of the interpreter path.
+*.sh text eol=lf
+
+# PowerShell is fine either way, but CRLF is what Windows tooling expects.
+*.ps1 text eol=crlf
+
+# Binary — never touch these.
+*.db     binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.webp   binary
+*.heic   binary
+*.xlsx   binary

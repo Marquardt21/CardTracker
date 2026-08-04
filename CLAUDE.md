@@ -12,7 +12,18 @@ Detailed per-feature specs (what each area does, key files, non-goals, and why n
 
 ### What This Is
 
-A personal sports card collection manager for home use — hockey, baseball and football (every card and set carries a `sport`, defaulting to Hockey). Two users (father and son) share the collection. The app runs on an Ubuntu PC and is accessed via iPad browsers on the home WiFi. **Raw (ungraded) cards only.**
+A personal sports card collection manager for home use — hockey, baseball and football (every card and set carries a `sport`, defaulting to Hockey). Two users (father and son) share the collection. The app runs on an Ubuntu PC **or a Windows 11 desktop** and is accessed via iPad browsers on the home WiFi. **Raw (ungraded) cards only.**
+
+### Cross-platform rules
+
+The app must run unchanged on Linux and Windows. What that costs:
+
+- **Never store an absolute path in the database.** `data/cards.db` and `photos/` are copied between the two machines; a path written on one is meaningless on the other. Store a bare filename and resolve it against a config directory (see `photo_service.resolve`).
+- **Never split a stored path on `/` alone.** Use `photoSrc()` in `api/client.js` on the frontend.
+- **Two launchers, kept parallel:** `start.sh` (Linux/macOS) and `start.ps1` (Windows). A change to one should be mirrored in the other. Neither may depend on `fuser`, `hostname -I`, or `source .venv/bin/activate` being available.
+- **Virtualenvs are not portable.** Linux uses `.venv`, Windows uses `.venv-windows`; both are gitignored and each launcher rebuilds its own. A launcher finding a venv from the other OS replaces it rather than failing.
+- **Python 3.11–3.13 only.** 3.14 has no `pydantic-core` wheel, so pip falls back to compiling Rust and fails without MSVC. Both launchers check and fail with that explanation.
+- No `os.system`, no shell built-ins in `subprocess`, no POSIX-only stdlib (`fcntl`, `signal.SIGKILL`) in `backend/`.
 
 Primary goals:
 - Track what cards we own and what they're worth
@@ -54,6 +65,15 @@ Backend runs on port 8000, frontend dev server on port 3000 (proxies `/api` → 
 - A **List on eBay** button in the same panel opens `CreateEbayDraftModal` for the just-saved card — value and list in one flow without leaving the page
 - After the listing is scheduled, the button shows "Listed on eBay ✓"; **Add Another** (keeps the current set) and **View Card** remain available
 - Listings load is keyed by the saved card id, so it appears only after Save (not during form entry)
+
+### 1c. Card Photos (front + back)
+- Every card can carry **one front and one back photo**, captured in the app. **Front is always the primary image** — collection thumbnail, card detail hero, and the first picture on the eBay listing
+- `CardPhotoCapture.jsx` renders two tiles, each an `<input type="file" accept="image/*" capture="environment">` — this opens the iPad's rear camera directly. Deliberately **not** `getUserMedia`, which needs a secure context and would not work over plain `http://` on the LAN. The component appears on Card Detail and in the Add Card "Card saved!" panel
+- Stored in `card_photos` (one row per card per side). `filename` is a **bare name relative to `photos/`**, never an absolute path — see the cross-platform rules above. `photo_service.resolve()` is the only filename → path conversion. `cards.photo_path` still mirrors the front photo so pre-existing thumbnail code keeps working; the startup migration rewrites old absolute paths and adopts existing photos as fronts
+- **Getting them to eBay:** the Sell Inventory API only accepts public HTTPS URLs, which a photo on a home-network machine does not have. `ebay_media_service` posts the bytes to the **Media API** (`create_image_from_file` → `getImage`) and gets back an eBay-hosted EPS URL. This replaces the Trading API's `UploadSiteHostedPictures`, **decommissioned 2026-09-30 — do not go back to it**. Requires only the `sell.inventory` scope the app already holds, so a connected account needs no re-consent. URLs are cached on the row until near expiry
+- `_resolve_image_urls` picks a listing's pictures: an explicit URL from the modal wins, else the cards' own photos (all fronts, then all backs, capped at 24), else `EBAY_PLACEHOLDER_IMAGE_URL`. A card that **has** photos but fails to upload makes the listing fail rather than silently publishing under a placeholder
+- **Retention:** photos are deleted once the card has been sold for `CARD_PHOTO_RETENTION_DAYS` (14). Purge runs at startup and every 12 hours (a plain asyncio task — no scheduler dependency). A card flagged sold with **no `sold_date` is never purged**. `GET /api/photos/status` and `POST /api/photos/purge?dry_run=true` expose it. `photos/` is gitignored
+- See [docs/specs/card-photos.md](docs/specs/card-photos.md)
 
 ### 2. Autocomplete Card Entry
 - Typing 2+ characters in any field (card number, player name, set name) on the Add Card page queries imported set checklists
@@ -135,7 +155,7 @@ backend/
   models.py                  # SQLAlchemy ORM models
   schemas.py                 # Pydantic request/response schemas
   routers/
-    cards.py                 # Card CRUD, photo upload, price recommendation
+    cards.py                 # Card CRUD, front/back photo capture, price recommendation
     dashboard.py             # Dashboard summary endpoint
     selling.py               # Selling dashboard + manual selling status updates
     ebay.py                  # eBay OAuth flow + listing creation endpoint
@@ -149,6 +169,8 @@ backend/
     price_service.py         # eBay price lookup (Insights → 130point → Finding API)
     grading_service.py       # ROI-based grading verdict engine
     set_import_service.py    # Upper Deck checklist scraper + card reconciliation
+    photo_service.py         # Card photo storage, resolution, retention purge
+    ebay_media_service.py    # Uploads card photos to eBay Picture Services (Media API)
 
 frontend/src/
   pages/
@@ -161,7 +183,8 @@ frontend/src/
     Alerts.jsx
     Settings.jsx
   components/
-    CreateEbayDraftModal.jsx # eBay listing form (title, price, photo URL, description)
+    CreateEbayDraftModal.jsx # eBay listing form (title, price, photos, description)
+    CardPhotoCapture.jsx     # Front/back camera capture tiles
     AutocompleteInput.jsx    # Live checklist suggestion input
     ImportSetPanel.jsx       # URL paste + import flow
     UnmatchedReviewModal.jsx # Post-import reconciliation results
@@ -182,6 +205,7 @@ frontend/src/
 | `EBAY_ZIP` | Your zip code — required to create eBay merchant location |
 | `EBAY_PLACEHOLDER_IMAGE_URL` | Default photo URL pre-filled in listing modal (Imgur/GitHub raw) |
 | `ANTHROPIC_API_KEY` | For optional "Scan Card with AI" feature |
+| `CARD_PHOTO_RETENTION_DAYS` | Days after a card sells before its photos are purged (default `14`; `0` disables) |
 
 ---
 
@@ -194,7 +218,7 @@ frontend/src/
 - **Condition model**: raw cards only. Item `condition = USED_VERY_GOOD` → conditionId 4000 = "Ungraded"; the Card Condition descriptor (40001) carries NM/EX/VG/Poor. Do **not** use `LIKE_NEW` (= conditionId 2750 = "Graded", which forces grade descriptors and blocks publish).
 - Required item aspects/descriptors are discovered dynamically via the Taxonomy + Metadata APIs (`get_item_aspects_for_category`, `get_item_condition_policies`), so new eBay requirements are auto-filled rather than hard-coded.
 - A `packageWeightAndSize` is required to publish (1 oz LETTER for ≤$20, 3 oz thick envelope otherwise).
-- Photos must be public HTTPS URLs — eBay does not accept localhost or local file paths
+- Photos must be public HTTPS URLs — eBay does not accept localhost or local file paths. Card photos captured in the app get one by being uploaded to eBay Picture Services via the Media API (see Card Photos above); only a manually pasted URL still has to be publicly hosted
 - Listings are published with a 2-hour delay so the user can add real photos or cancel in Seller Hub
 
 ---
@@ -220,7 +244,7 @@ frontend/src/
 - PIN-based auth + remote access via Tailscale
 - Push notifications (iOS Shortcuts + webhook) for price spike alerts
 - PSA/BGS population report integration
-- Multi-photo support per card
+
 - Barcode/QR scanning for sealed product
 - Trade value comparison tool
 - systemd auto-start service

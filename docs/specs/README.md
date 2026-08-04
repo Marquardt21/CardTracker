@@ -17,3 +17,4 @@ Written by hand? no — generated and kept up to date by the `/feature` command 
 - [alerts.md](alerts.md) — Implemented
 - [mlb-nfl-card-support.md](mlb-nfl-card-support.md) — Planned
 - [ai-selling-strategy.md](ai-selling-strategy.md) — Implemented
+- [card-photos.md](card-photos.md) — Implemented

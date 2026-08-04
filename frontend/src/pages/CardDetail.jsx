@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteCard, generateGrading, getActiveListings, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling, uploadPhoto } from '../api/client'
+import { deleteCard, generateGrading, getActiveListings, getCard, getPriceRecommendation, getValues, refreshValue, toggleWatchlist, updateCard, updateSelling } from '../api/client'
+import CardPhotoCapture from '../components/CardPhotoCapture'
 import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 import GradingBadge from '../components/GradingBadge'
 import PriceChart from '../components/PriceChart'
@@ -20,7 +21,6 @@ export default function CardDetail() {
   const [saving, setSaving]   = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
-  const [photoUploading, setPhotoUploading] = useState(false)
   const [gradingRec, setGradingRec] = useState(null)
   const [gradingLoading, setGradingLoading] = useState(false)
   const [error, setError]     = useState(null)
@@ -97,7 +97,7 @@ export default function CardDetail() {
         team: get('team')||null, position: get('position')||null,
         card_type: effectiveType, parallel_color: parallelColor||null,
         print_run: get('print_run') ? parseInt(get('print_run')) : null,
-        condition: get('condition'), notes: get('notes')||null,
+        condition: get('condition'), pack_label: get('pack_label')||null, notes: get('notes')||null,
       })
       setCard(data)
       setEditing(false)
@@ -111,12 +111,10 @@ export default function CardDetail() {
     catch { setError('Delete failed.'); setDeleting(false); setConfirmDel(false) }
   }
 
-  async function handlePhoto(e) {
-    const file = e.target.files?.[0]; if (!file) return
-    setPhotoUploading(true)
-    try { const { data } = await uploadPhoto(id, file); setCard(data) }
-    catch { setError('Photo upload failed.') }
-    finally { setPhotoUploading(false) }
+  // Capture writes photo_path server-side (the front photo doubles as the
+  // collection thumbnail), so re-read the card after a change.
+  async function refreshCard() {
+    try { const { data } = await getCard(id); setCard(data) } catch { /* keep showing what we have */ }
   }
 
   async function handleWatchlist() {
@@ -168,7 +166,6 @@ export default function CardDetail() {
   if (loading) return <div className="text-center py-16 text-[#94A3B8]">Loading…</div>
   if (!card)   return <div className="text-center py-16 text-red-400">{error || 'Card not found.'}</div>
 
-  const photoUrl = card.photo_path ? `/photos/${card.photo_path.split('/').pop()}` : null
   const latestValue = values.length ? values.reduce((a, b) => new Date(a.fetched_at) > new Date(b.fetched_at) ? a : b) : null
 
   if (editing) {
@@ -202,6 +199,9 @@ export default function CardDetail() {
           <div><label className="block text-[#94A3B8] text-sm mb-1">Print Run</label>
             <input name="print_run" type="number" defaultValue={card.print_run??''}
               className="w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC]" /></div>
+          <div><label className="block text-[#94A3B8] text-sm mb-1">Pulled from (pack)</label>
+            <input name="pack_label" defaultValue={card.pack_label??''} placeholder="e.g. Week 3 Pack 2"
+              className="w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC]" /></div>
           <div><label className="block text-[#94A3B8] text-sm mb-1">Notes</label>
             <textarea name="notes" rows={3} defaultValue={card.notes??''}
               className="w-full bg-[#1A2E45] text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#A8DADC] resize-none" /></div>
@@ -219,16 +219,8 @@ export default function CardDetail() {
     <div className="pb-24 px-4 pt-6 max-w-lg mx-auto">
       <button onClick={() => navigate('/cards')} className="text-[#A8DADC] text-sm mb-4 min-h-0">← Collection</button>
 
-      {/* Photo */}
-      <div className="mb-5 flex flex-col items-center">
-        {photoUrl
-          ? <img src={photoUrl} alt={card.player_name} className="max-h-64 rounded-xl object-contain bg-[#1A2E45] w-full" />
-          : <div className="w-full h-40 bg-[#1A2E45] rounded-xl flex items-center justify-center text-5xl">🃏</div>}
-        <label className="mt-2 cursor-pointer text-[#A8DADC] text-sm min-h-0">
-          {photoUploading ? 'Uploading…' : photoUrl ? 'Change Photo' : '+ Add Photo'}
-          <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} disabled={photoUploading} />
-        </label>
-      </div>
+      {/* Photos — front and back, captured from the iPad camera */}
+      <CardPhotoCapture cardId={card.id} onChange={() => refreshCard()} />
 
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
@@ -251,6 +243,7 @@ export default function CardDetail() {
           ['Parallel',  card.parallel_color],
           ['Print Run', card.print_run ? `/${card.print_run}` : null],
           ['Matched',   card.checklist_matched ? '✓ Yes' : '✗ Not yet'],
+          ['Pulled from', card.pack_label],
           ['Notes',     card.notes],
         ].filter(([,v]) => v).map(([label, value]) => (
           <div key={label} className="flex justify-between px-4 py-3">

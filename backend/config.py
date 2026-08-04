@@ -21,6 +21,43 @@ EBAY_ZIP                    = os.getenv("EBAY_ZIP", "85212").strip()
 EBAY_PLACEHOLDER_IMAGE_URL  = os.getenv("EBAY_PLACEHOLDER_IMAGE_URL", "").strip()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# ── Card photos ──────────────────────────────────────────────────────────────
+# Each card can carry a front and a back photo, captured in the app. Front is
+# always the primary listing image.
+CARD_PHOTO_SIDES = ["front", "back"]
+
+# Photos are personal data with no reason to outlive the sale. Once a card has
+# been sold this long, its photo files and rows are purged. eBay keeps its own
+# copy of anything that reached a listing, so purging never blanks a live
+# listing. Set to 0 to disable the purge entirely.
+CARD_PHOTO_RETENTION_DAYS = int(os.getenv("CARD_PHOTO_RETENTION_DAYS", "14"))
+
+# How often the background purge runs while the server is up. It also runs once
+# at startup, which covers the machine being off for a stretch.
+CARD_PHOTO_PURGE_INTERVAL_HOURS = 12
+
+# Accepted upload formats. iPad Safari hands us JPEG for camera captures; HEIC
+# shows up when picking an existing photo from the library.
+CARD_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+# eBay's own per-image ceiling is 12 MB; reject above that before we waste an
+# upload round trip.
+CARD_PHOTO_MAX_BYTES = 12 * 1024 * 1024
+
+# ── eBay Media API (image hosting) ───────────────────────────────────────────
+# The Sell Inventory API only accepts public HTTPS image URLs, so a photo sitting
+# on this machine can't be listed directly. The Media API takes the file bytes
+# and hands back an eBay-hosted (EPS) URL — the same thing the eBay app does when
+# you upload from your phone.
+#
+# This replaces the Trading API's UploadSiteHostedPictures, which eBay
+# decommissions on 2026-09-30.
+EBAY_MEDIA_BASE = "https://apim.ebay.com/commerce/media/v1_beta"
+# eBay allows up to 24 images per listing.
+EBAY_MAX_IMAGES = 24
+# EPS images expire if unused. eBay does return an expirationDate; this is the
+# conservative assumption used when it doesn't.
+EBAY_IMAGE_ASSUMED_TTL_DAYS = 30
+
 # ── Sports ───────────────────────────────────────────────────────────────────
 # Fixed set of sports a card / set can belong to. Kept small and closed so the
 # eBay League aspect and Whatnot Sub Category mappings below always resolve.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createEbayDraft, getSettings } from '../api/client'
+import { createEbayDraft, getCardPhotos, getSettings } from '../api/client'
 
 const COND_LABELS = { poor: 'Poor', good: 'Good', very_good: 'VG', excellent: 'EX', near_mint: 'NM', mint: 'Mint' }
 const AUCTION_DURATIONS = [['DAYS_1', '1 day'], ['DAYS_3', '3 days'], ['DAYS_5', '5 days'], ['DAYS_7', '7 days'], ['DAYS_10', '10 days']]
@@ -53,6 +53,11 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
   const [photoUrl, setPhotoUrl]     = useState('')
   const [placeholderUrl, setPlaceholderUrl] = useState('')
   const [photoCustom, setPhotoCustom] = useState(false)
+  // Photos captured in the app for these cards. When there are any, they are
+  // what gets listed — the backend uploads them to eBay Picture Services and
+  // uses the front shots as the lead images.
+  const [cardPhotos, setCardPhotos] = useState([])
+  const [photosLoading, setPhotosLoading] = useState(true)
   const [showDesc, setShowDesc]     = useState(false)
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState(null)
@@ -68,6 +73,33 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
     }).catch(() => {})
   }, [])
 
+  // Every call site builds the `cards` array inline, so it is a new reference on
+  // each render — keying the fetch on the ids keeps this from refetching
+  // forever.
+  const cardIdsKey = cards.map(c => c.id).join(',')
+
+  useEffect(() => {
+    let cancelled = false
+    setPhotosLoading(true)
+    Promise.all(cardIdsKey.split(',').filter(Boolean).map(id =>
+      getCardPhotos(id).then(r => r.data).catch(() => [])
+    )).then(perCard => {
+      if (cancelled) return
+      // Front photos of every card first, then the backs — the order eBay
+      // receives them in, so the listing leads with card fronts.
+      const flat = perCard.flat()
+      setCardPhotos([
+        ...flat.filter(p => p.side === 'front'),
+        ...flat.filter(p => p.side === 'back'),
+      ])
+      setPhotosLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [cardIdsKey])
+
+  // An explicit URL always wins; otherwise captured photos are used if present.
+  const usingCardPhotos = !photoCustom && cardPhotos.length > 0
+
   const worstCond = cards.reduce((worst, c) =>
     (COND_RANK[c.condition] ?? 5) > (COND_RANK[worst] ?? 5) ? c.condition : worst,
     cards[0]?.condition
@@ -77,7 +109,10 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
     e.preventDefault()
     const p = parseFloat(price)
     if (!p || p <= 0) { setError('Enter a valid price.'); return }
-    if (!photoUrl.trim()) { setError('A photo URL is required by eBay. Paste an Imgur or GitHub raw link.'); return }
+    if (!usingCardPhotos && !photoUrl.trim()) {
+      setError('This listing has no pictures. Take a front photo on the card, or paste a public HTTPS image URL.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -86,7 +121,9 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
         price:          p,
         title:          title.trim() || undefined,
         description:    description.trim() || undefined,
-        image_urls:     photoUrl.trim() ? [photoUrl.trim()] : [],
+        // Empty means "use the cards' own photos" — the backend uploads them to
+        // eBay and fills in the URLs.
+        image_urls:     usingCardPhotos ? [] : [photoUrl.trim()],
         listing_format: format,
         auction_duration: duration,
       })
@@ -241,10 +278,44 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
             </label>
 
             {/* Photo */}
-            {placeholderUrl && !photoCustom ? (
+            {photosLoading ? (
+              <div className="mb-3 bg-[#1A2E45] rounded-xl px-4 py-3">
+                <p className="text-[#94A3B8] text-sm">Checking for card photos…</p>
+              </div>
+            ) : usingCardPhotos ? (
+              <div className="mb-3 bg-[#1A2E45] rounded-xl px-4 py-3">
+                <p className="text-[#94A3B8] text-sm">
+                  📷 Using your card photo{cardPhotos.length > 1 ? 's' : ''} ({cardPhotos.length})
+                </p>
+                <div className="flex gap-2 mt-2 overflow-x-auto pb-1
+                  [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {cardPhotos.map((p, i) => (
+                    <div key={`${p.url}-${i}`} className="shrink-0 relative">
+                      <img src={p.url} alt={p.side}
+                        className="w-14 h-[74px] object-cover rounded-lg bg-[#0D1B2A]" />
+                      {i === 0 && (
+                        <span className="absolute -top-1 -left-1 bg-[#A8DADC] text-[#0D1B2A]
+                                         text-[9px] font-bold px-1 rounded">MAIN</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[#4A6080] text-xs mt-1.5">
+                  Uploaded to eBay when the listing is created. Front is the main image.
+                </p>
+                <button type="button"
+                  onClick={() => { setPhotoCustom(true); setPhotoUrl('') }}
+                  className="text-[#A8DADC] text-xs underline mt-2">
+                  Use a custom photo URL instead
+                </button>
+              </div>
+            ) : placeholderUrl && !photoCustom ? (
               <div className="mb-3 bg-[#1A2E45] rounded-xl px-4 py-3">
                 <p className="text-[#94A3B8] text-sm">📷 Using placeholder image</p>
-                <p className="text-[#4A6080] text-xs mt-0.5">Add your real card photos in the eBay app after listing.</p>
+                <p className="text-[#4A6080] text-xs mt-0.5">
+                  No photos captured for {cards.length > 1 ? 'these cards' : 'this card'} — take a front photo on the
+                  card's page to list with the real thing.
+                </p>
                 <button type="button"
                   onClick={() => { setPhotoCustom(true); setPhotoUrl('') }}
                   className="text-[#A8DADC] text-xs underline mt-2">
@@ -263,7 +334,12 @@ export default function CreateEbayDraftModal({ cards, onClose, onSuccess }) {
                 />
                 <p className="text-[#4A6080] text-xs mt-1">
                   Public HTTPS link (Imgur or GitHub raw).
-                  {placeholderUrl && (
+                  {cardPhotos.length > 0 && (
+                    <button type="button"
+                      onClick={() => { setPhotoCustom(false); setPhotoUrl('') }}
+                      className="text-[#A8DADC] underline ml-1">Use card photos</button>
+                  )}
+                  {placeholderUrl && cardPhotos.length === 0 && (
                     <button type="button"
                       onClick={() => { setPhotoCustom(false); setPhotoUrl(placeholderUrl) }}
                       className="text-[#A8DADC] underline ml-1">Use placeholder</button>

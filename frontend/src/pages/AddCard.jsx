@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { autocomplete, checkCardExists, createCard, getActiveListings, searchSets } from '../api/client'
 import AutocompleteInput from '../components/AutocompleteInput'
+import CardPhotoCapture from '../components/CardPhotoCapture'
 import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 import ImportSetPanel from '../components/ImportSetPanel'
 import UnmatchedReviewModal from '../components/UnmatchedReviewModal'
@@ -30,6 +31,7 @@ export default function AddCard() {
     printRun:      params.get('print_run') || '',
     team:          params.get('team') || '',
     sport:         params.get('sport') || 'Hockey',
+    packLabel:     params.get('pack') || '',
   }
 
   // ── Step 1: Set ─────────────────────────────────────────────────────────────
@@ -60,6 +62,9 @@ export default function AddCard() {
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState(null)
   const [savedCard,    setSavedCard]    = useState(null)
+  // Photos captured for the just-saved card, so the listing modal can show what
+  // it's about to publish with.
+  const [savedPhotos,  setSavedPhotos]  = useState([])
   const [duplicates,   setDuplicates]   = useState(null)
   const [pendingSave,  setPendingSave]  = useState(null)
   const [showImport,   setShowImport]   = useState(false)
@@ -163,6 +168,7 @@ export default function AddCard() {
       parallelColor: s.parallel_color || '',
       printRun:      s.print_run ? String(s.print_run) : '',
       team:          s.team || '',
+      packLabel:     prefill.packLabel || '',
     })
     setFormKey(k => k + 1)
   }
@@ -207,6 +213,7 @@ export default function AddCard() {
       parallel_color:   parallelColor || null,
       print_run:        get('print_run') ? parseInt(get('print_run')) : null,
       condition:        get('condition') || 'near_mint',
+      pack_label:       get('pack_label') || null,
       notes:            get('notes') || null,
       sold_date:        get('sold_date') ? new Date(get('sold_date')).toISOString() : null,
       sold_price:       get('sold_price') ? parseFloat(get('sold_price')) : null,
@@ -246,22 +253,22 @@ export default function AddCard() {
   }
 
   function resetForm() {
-    setSavedCard(null); setDuplicates(null); setPendingSave(null); setListed(false)
+    setSavedCard(null); setSavedPhotos([]); setDuplicates(null); setPendingSave(null); setListed(false)
     setSetQuery(''); setSetOptions([]); setSetOpen(false); setSetActive(-1)
     setSelectedSet(null); setSelectedYear('')
     setCardNumber(''); setCardType('base'); setParallelColor(''); setSport('Hockey')
     setShowSoldSection(false)
-    setPrefill({ playerName: '', brand: '', year: '', setName: '', cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' })
+    setPrefill({ playerName: '', brand: '', year: '', setName: '', cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '', packLabel: '' })
     setError(null)
     setFormKey(k => k + 1)
   }
 
   function addAnother() {
-    // Keep the set from the card just saved; clear everything else
-    setSavedCard(null); setDuplicates(null); setPendingSave(null); setListed(false)
+    // Keep the set and pack from the card just saved; clear everything else
+    setSavedCard(null); setSavedPhotos([]); setDuplicates(null); setPendingSave(null); setListed(false)
     setCardNumber(''); setCardType('base'); setParallelColor('')
     setShowSoldSection(false)
-    setPrefill(p => ({ playerName: '', brand: p.brand, year: p.year, setName: p.setName, cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '' }))
+    setPrefill(p => ({ playerName: '', brand: p.brand, year: p.year, setName: p.setName, cardNumber: '', cardType: 'base', parallelColor: '', printRun: '', team: '', packLabel: p.packLabel }))
     setError(null)
     setFormKey(k => k + 1)
     setTimeout(() => cardNumberRef.current?.focus(), 0)
@@ -300,6 +307,14 @@ export default function AddCard() {
           <p className="text-[#94A3B8] text-xs mb-4">
             {savedCard.player_name} · #{savedCard.card_number} · {savedCard.set_name}
           </p>
+
+          {/* ── Photos ────────────────────────────────────────────────────
+              The card has an id now, so the camera can be used before listing —
+              shoot front and back here and the listing picks them up. */}
+          <div className="bg-[#1A2E45] rounded-xl p-3 mb-4">
+            <p className="text-white font-semibold text-sm mb-2">Photos</p>
+            <CardPhotoCapture cardId={savedCard.id} compact onChange={setSavedPhotos} />
+          </div>
 
           {/* ── Current eBay listings (live) ──────────────────────────────── */}
           <div className="bg-[#1A2E45] rounded-xl p-3 mb-4">
@@ -462,6 +477,7 @@ export default function AddCard() {
         <UField key={`player-${formKey}`} label="Player Name *" name="player_name" defaultValue={prefill.playerName} placeholder="e.g. Connor McDavid" />
         <UField key={`brand-${formKey}`}  label="Brand"         name="brand"       defaultValue={prefill.brand || 'Upper Deck'} />
         <UField key={`team-${formKey}`}   label="Team"          name="team"        defaultValue={prefill.team} />
+        <UField key={`pack-${formKey}`}   label="Pulled from (pack)" name="pack_label" defaultValue={prefill.packLabel} placeholder="e.g. Week 3 Pack 2 — optional" />
 
         <div key={`condition-${formKey}`}>
           <label className="block text-[#94A3B8] text-sm mb-1">Condition</label>

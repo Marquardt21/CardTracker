@@ -21,6 +21,25 @@ export const uploadPhoto   = (id, file) => {
   return client.post(`/cards/${id}/photo`, form)
 }
 
+// Card photos — one per side ("front" | "back"). Front is the primary image and
+// the first picture on an eBay listing. Camera captures off an iPad are several
+// MB, so these get a longer timeout than the default 15s.
+/** Thumbnail URL for a card's front photo.
+ *  `photo_path` is a bare filename now, but databases written before that
+ *  migration held a full path — from either OS — so split on both separators. */
+export const photoSrc = (photoPath) =>
+  photoPath ? `/photos/${String(photoPath).split(/[\\/]/).pop()}` : null
+
+export const getCardPhotos  = (id) => client.get(`/cards/${id}/photos`)
+export const uploadCardPhoto = (id, side, file) => {
+  const form = new FormData()
+  form.append('photo', file)
+  return client.post(`/cards/${id}/photos/${side}`, form, { timeout: 120000 })
+}
+export const deleteCardPhoto = (id, side) => client.delete(`/cards/${id}/photos/${side}`)
+export const getPhotoStatus  = () => client.get('/photos/status')
+export const purgePhotos     = (dryRun = false) => client.post('/photos/purge', null, { params: { dry_run: dryRun } })
+
 // Autocomplete
 export const autocomplete  = (q, field, extra = {}) => client.get('/autocomplete', { params: { q, field, ...extra } })
 

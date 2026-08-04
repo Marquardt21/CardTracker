@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { analyzeStrategy, createEbayDraft, generateGrading, getCards, getSettings, toggleWatchlist } from '../api/client'
+import { analyzeStrategy, createEbayDraft, generateGrading, getCards, getSettings, photoSrc, toggleWatchlist } from '../api/client'
 
 const TYPE_LABELS = { base:'Base', rookie:'RC', parallel:'Parallel', autograph:'Auto', patch_relic:'Patch' }
 
@@ -235,7 +235,7 @@ export default function Strategy() {
                   {isSelected && <span className="text-[#0D1B2A] text-xs font-bold">✓</span>}
                 </div>
                 {card.photo_path
-                  ? <img src={`/photos/${card.photo_path.split('/').pop()}`} alt={card.player_name} className="w-10 h-14 object-cover rounded-lg flex-shrink-0" />
+                  ? <img src={photoSrc(card.photo_path)} alt={card.player_name} className="w-10 h-14 object-cover rounded-lg flex-shrink-0" />
                   : <div className="w-10 h-14 bg-[#0D1B2A] rounded-lg flex-shrink-0 flex items-center justify-center text-lg">🃏</div>
                 }
                 <div className="flex-1 min-w-0">
@@ -304,7 +304,7 @@ export default function Strategy() {
                           return (
                             <li key={id} className="flex items-center gap-2">
                               {c?.photo_path
-                                ? <img src={`/photos/${c.photo_path.split('/').pop()}`} alt="" className="w-6 h-8 object-cover rounded flex-shrink-0" />
+                                ? <img src={photoSrc(c.photo_path)} alt="" className="w-6 h-8 object-cover rounded flex-shrink-0" />
                                 : <div className="w-6 h-8 bg-[#0D1B2A] rounded flex-shrink-0 flex items-center justify-center text-[10px]">🃏</div>
                               }
                               <span className="text-white text-xs truncate">

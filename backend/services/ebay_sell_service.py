@@ -12,11 +12,13 @@ from backend.config import (
     EBAY_APP_ID,
     EBAY_CERT_ID,
     EBAY_LEAGUE_BY_SPORT,
+    EBAY_PLACEHOLDER_IMAGE_URL,
     EBAY_RU_NAME,
     EBAY_SHIP_PRICE,
     EBAY_ZIP,
 )
 from backend.models import Card, DraftListingCard, EbayDraftListing, EbayToken
+from backend.services import ebay_media_service, photo_service
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,8 @@ _GROUND_POLICY_NAME = "CardTracker Ground Shipping"
 _RETURN_POLICY_NAME = "CardTracker No Returns"
 
 # Scopes must exactly match what is granted in the eBay developer dashboard
+# sell.inventory also covers the Media API's createImageFromFile, so uploading
+# card photos needs no extra consent from an already-connected account.
 _SCOPES = " ".join([
     "https://api.ebay.com/oauth/api_scope",
     "https://api.ebay.com/oauth/api_scope/sell.inventory",
@@ -525,6 +529,47 @@ def _ensure_policies(token: str) -> dict:
 _AUCTION_DURATION = "DAYS_7"  # eBay auctions default to a 7-day run
 
 
+def _resolve_image_urls(
+    db: Session,
+    cards: list[Card],
+    token: str,
+    explicit: list[str] | None,
+) -> list[str]:
+    """Decide what pictures this listing publishes with.
+
+    Priority, highest first:
+
+    1. URLs the operator typed into the modal — an explicit override always wins.
+    2. The cards' own captured photos, uploaded to eBay Picture Services. Front
+       photos lead, then backs.
+    3. `EBAY_PLACEHOLDER_IMAGE_URL`, the pre-photos behaviour, for cards that
+       were never photographed.
+
+    A card with photos but a failed upload raises rather than quietly falling
+    through to the placeholder — publishing a real card under a placeholder
+    picture is a bad listing, not a degraded one."""
+    explicit_urls = [u.strip() for u in (explicit or []) if u.strip()]
+    if explicit_urls:
+        return explicit_urls
+
+    if any(photo_service.get_photos(db, c.id) for c in cards):
+        try:
+            urls = ebay_media_service.image_urls_for_cards(db, cards, token)
+        except ebay_media_service.MediaUploadError as exc:
+            raise ValueError(str(exc)) from exc
+        if urls:
+            return urls
+
+    if EBAY_PLACEHOLDER_IMAGE_URL:
+        return [EBAY_PLACEHOLDER_IMAGE_URL]
+
+    raise ValueError(
+        "This listing has no photos. Capture a front (and ideally a back) photo "
+        "on the card's page, or set EBAY_PLACEHOLDER_IMAGE_URL in .env, "
+        "or paste a URL in the photo field."
+    )
+
+
 def create_draft(
     db: Session,
     card_ids: list[int],
@@ -579,13 +624,7 @@ def create_draft(
     sku = f"CT-{'-'.join(str(c.id) for c in cards)}-{uuid.uuid4().hex[:6]}"
     headers = _api_headers(token)
 
-    clean_image_urls = [u.strip() for u in (image_urls or []) if u.strip()]
-    if not clean_image_urls:
-        raise ValueError(
-            "A photo URL is required by eBay. "
-            "Set EBAY_PLACEHOLDER_IMAGE_URL in .env (e.g. a raw GitHub or Imgur link) and restart, "
-            "or paste a URL in the photo field."
-        )
+    clean_image_urls = _resolve_image_urls(db, cards, token, image_urls)
     non_https = [u for u in clean_image_urls if not u.lower().startswith("https://")]
     if non_https:
         raise ValueError(f"eBay requires HTTPS image URLs. Non-HTTPS URL: {non_https[0][:80]}")

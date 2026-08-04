@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from backend.config import (
     EBAY_APP_ID, ANTHROPIC_API_KEY,
+    CARD_PHOTO_RETENTION_DAYS,
     GRADING_COSTS, GRADING_MULTIPLIERS, PRICE_SPIKE_THRESHOLD,
     GRADING_ROI_WORTH_IT, GRADING_ROI_BORDERLINE,
     EBAY_PLACEHOLDER_IMAGE_URL,
 )
 from backend.database import get_db
-from backend.models import Card
+from backend.models import Card, CardPhoto
+from backend.services import photo_service
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -31,7 +33,24 @@ def get_settings():
         "grading_costs": GRADING_COSTS,
         "grading_multipliers": GRADING_MULTIPLIERS,
         "ebay_placeholder_image_url": EBAY_PLACEHOLDER_IMAGE_URL,
+        "card_photo_retention_days": CARD_PHOTO_RETENTION_DAYS,
     }
+
+
+@router.get("/photos/status")
+def photos_status(db: Session = Depends(get_db)):
+    """What the photo store currently holds, and what the next purge will take."""
+    return {
+        "retention_days": CARD_PHOTO_RETENTION_DAYS,
+        "stored": db.query(CardPhoto).count(),
+        "pending_purge": photo_service.pending_purge_count(db),
+    }
+
+
+@router.post("/photos/purge")
+def purge_photos(dry_run: bool = False, db: Session = Depends(get_db)):
+    """Run the retention purge now rather than waiting for the timer."""
+    return photo_service.purge_expired(db, dry_run=dry_run)
 
 
 @router.get("/export/csv")

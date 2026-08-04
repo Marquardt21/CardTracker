@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { disconnectEbay, exportCsv, getEbayAuthStatus, getRefreshAllStatus, getSettings, refreshAllValues, storeEbayUserToken } from '../api/client'
+import { disconnectEbay, exportCsv, getEbayAuthStatus, getPhotoStatus, getRefreshAllStatus, getSettings, purgePhotos, refreshAllValues, storeEbayUserToken } from '../api/client'
 
 export default function Settings() {
   const [settings, setSettings]           = useState(null)
@@ -9,10 +9,13 @@ export default function Settings() {
   const [tokenError, setTokenError]       = useState(null)
   const [tokenSaving, setTokenSaving]     = useState(false)
   const [refresh, setRefresh]             = useState(null)   // {running,total,done,refreshed,finished_at}
+  const [photoStatus, setPhotoStatus]     = useState(null)   // {retention_days,stored,pending_purge}
+  const [purging, setPurging]             = useState(false)
   const pollRef = useRef(null)
 
   useEffect(() => {
     getSettings().then(r => setSettings(r.data)).catch(() => {})
+    getPhotoStatus().then(r => setPhotoStatus(r.data)).catch(() => {})
     getEbayAuthStatus().then(r => setEbayConnected(r.data.connected)).catch(() => setEbayConnected(false))
     // Resume showing progress if a refresh is already running (e.g. after navigating away)
     getRefreshAllStatus().then(r => { if (r.data.running) { setRefresh(r.data); startPolling() } }).catch(() => {})
@@ -55,6 +58,16 @@ export default function Settings() {
   async function handleDisconnect() {
     await disconnectEbay().catch(() => {})
     setEbayConnected(false)
+  }
+
+  async function handlePurge() {
+    setPurging(true)
+    try {
+      await purgePhotos()
+      const { data } = await getPhotoStatus()
+      setPhotoStatus(data)
+    } catch { /* status stays as-is; the timed purge will retry anyway */ }
+    finally { setPurging(false) }
   }
 
   async function handleExport() {
@@ -189,6 +202,33 @@ export default function Settings() {
           {exporting ? 'Exporting…' : '⬇ Export Collection to CSV'}
         </button>
       </div>
+
+      {/* Card photos */}
+      {photoStatus && (
+        <div className="bg-[#1A2E45] rounded-xl p-4">
+          <p className="text-[#94A3B8] text-xs font-semibold uppercase tracking-wide mb-3">Card Photos</p>
+          {[
+            ['Stored', `${photoStatus.stored} photo${photoStatus.stored === 1 ? '' : 's'}`],
+            ['Kept after a card sells', photoStatus.retention_days > 0 ? `${photoStatus.retention_days} days` : 'Forever (purge off)'],
+            ['Due for deletion', `${photoStatus.pending_purge} card${photoStatus.pending_purge === 1 ? '' : 's'}`],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between py-2 border-b border-[#0D1B2A] last:border-0">
+              <span className="text-[#94A3B8] text-sm">{label}</span>
+              <span className="text-white text-sm font-medium">{value}</span>
+            </div>
+          ))}
+          {photoStatus.pending_purge > 0 && (
+            <button onClick={handlePurge} disabled={purging}
+              className="w-full mt-3 bg-[#0D1B2A] text-white rounded-xl py-2.5 text-sm disabled:opacity-40">
+              {purging ? 'Deleting…' : `Delete now (${photoStatus.pending_purge})`}
+            </button>
+          )}
+          <p className="text-[#4A6080] text-xs mt-3">
+            Runs automatically at startup and every 12 hours. eBay keeps its own copy of
+            anything already listed, so this never affects a live listing.
+          </p>
+        </div>
+      )}
 
       {/* Thresholds */}
       {settings && (

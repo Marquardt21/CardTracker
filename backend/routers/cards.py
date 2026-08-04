@@ -1,14 +1,12 @@
-from pathlib import Path
 from typing import Optional
-import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from backend.config import PHOTOS_DIR
 from backend.database import get_db
 from backend.models import Card, SetChecklistCard
-from backend.schemas import AutocompleteSuggestion, CardCreate, CardOut, CardUpdate
+from backend.schemas import AutocompleteSuggestion, CardCreate, CardOut, CardPhotoOut, CardUpdate
+from backend.services import photo_service
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -22,6 +20,7 @@ def list_cards(
     year: int | None = Query(None),
     card_type: str | None = Query(None),
     condition: str | None = Query(None),
+    pack_label: str | None = Query(None),
     unmatched: bool = Query(False),
     sort: str = Query("date_added_desc"),
     db: Session = Depends(get_db),
@@ -50,6 +49,8 @@ def list_cards(
         q = q.filter(Card.card_type == card_type)
     if condition:
         q = q.filter(Card.condition == condition)
+    if pack_label:
+        q = q.filter(Card.pack_label.ilike(f"%{pack_label}%"))
 
     sort_map = {
         "date_added_desc": Card.date_added.desc(),
@@ -129,27 +130,80 @@ def delete_card(card_id: int, db: Session = Depends(get_db)):
     db.query(SetChecklistCard).filter(
         SetChecklistCard.collection_card_id == card_id
     ).update({"owned": False, "collection_card_id": None})
-    if card.photo_path:
-        p = Path(card.photo_path)
-        if p.exists():
-            p.unlink()
+    photo_service.delete_all_for_card(db, card)
     db.delete(card)
     db.commit()
 
 
-@router.post("/{card_id}/photo", response_model=CardOut)
-async def upload_photo(card_id: int, photo: UploadFile = File(...), db: Session = Depends(get_db)):
+def _card_or_404(card_id: int, db: Session) -> Card:
     card = db.query(Card).filter(Card.id == card_id).first()
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    suffix = Path(photo.filename).suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".heic"}:
-        raise HTTPException(status_code=400, detail="Unsupported image format")
-    dest = PHOTOS_DIR / f"card_{card_id}{suffix}"
-    async with aiofiles.open(dest, "wb") as f:
-        await f.write(await photo.read())
-    card.photo_path = str(dest)
-    db.commit()
+    return card
+
+
+def _photo_out(photo) -> CardPhotoOut:
+    return CardPhotoOut(
+        side=photo.side,
+        url=photo_service.public_url(photo),
+        captured_at=photo.captured_at,
+        uploaded_to_ebay=bool(photo.ebay_image_url),
+    )
+
+
+@router.get("/{card_id}/photos", response_model=list[CardPhotoOut])
+def list_photos(card_id: int, db: Session = Depends(get_db)):
+    """A card's photos, front first."""
+    _card_or_404(card_id, db)
+    return [_photo_out(p) for p in photo_service.get_photos(db, card_id)]
+
+
+@router.post("/{card_id}/photos/{side}", response_model=CardPhotoOut)
+async def upload_card_photo(
+    card_id: int,
+    side: str,
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Capture or retake one side of a card. `side` is "front" or "back"."""
+    card = _card_or_404(card_id, db)
+    try:
+        saved = photo_service.save_photo(
+            db, card, side,
+            await photo.read(),
+            filename=photo.filename,
+            content_type=photo.content_type,
+        )
+    except photo_service.PhotoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _photo_out(saved)
+
+
+@router.delete("/{card_id}/photos/{side}", status_code=204)
+def delete_card_photo(card_id: int, side: str, db: Session = Depends(get_db)):
+    card = _card_or_404(card_id, db)
+    try:
+        removed = photo_service.delete_photo(db, card, side)
+    except photo_service.PhotoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"No {side} photo on this card")
+
+
+@router.post("/{card_id}/photo", response_model=CardOut)
+async def upload_photo(card_id: int, photo: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Legacy single-photo upload — kept so older clients keep working. Stores
+    the image as the card's front photo."""
+    card = _card_or_404(card_id, db)
+    try:
+        photo_service.save_photo(
+            db, card, "front",
+            await photo.read(),
+            filename=photo.filename,
+            content_type=photo.content_type,
+        )
+    except photo_service.PhotoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.refresh(card)
     return card
 

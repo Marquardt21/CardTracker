@@ -5,6 +5,7 @@ import AddCard from './pages/AddCard'
 import CardDetail from './pages/CardDetail'
 import Collection from './pages/Collection'
 import Dashboard from './pages/Dashboard'
+import Pipeline from './pages/Pipeline'
 import SetChecklists from './pages/SetChecklists'
 import SetDetail from './pages/SetDetail'
 import Settings from './pages/Settings'
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/selling"    element={<SellingDashboard />} />
           <Route path="/strategy"   element={<Strategy />} />
           <Route path="/alerts"     element={<Alerts />} />
+          <Route path="/pipeline"   element={<Pipeline />} />
           <Route path="/settings"   element={<Settings />} />
         </Routes>
       </main>

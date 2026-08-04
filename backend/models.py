@@ -21,6 +21,7 @@ class Card(Base):
     print_run: Mapped[int | None] = mapped_column(Integer, nullable=True)
     condition: Mapped[str] = mapped_column(String, default="near_mint")
     date_added: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    pack_label: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_path: Mapped[str | None] = mapped_column(String, nullable=True)
     grading_watchlist: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -35,9 +36,41 @@ class Card(Base):
     is_sold: Mapped[bool] = mapped_column(Boolean, default=False)
 
     values: Mapped[list["CardValue"]] = relationship("CardValue", back_populates="card", cascade="all, delete-orphan")
+    photos: Mapped[list["CardPhoto"]] = relationship(
+        "CardPhoto", back_populates="card", cascade="all, delete-orphan"
+    )
     grading_recommendations: Mapped[list["GradingRecommendation"]] = relationship(
         "GradingRecommendation", back_populates="card", cascade="all, delete-orphan"
     )
+
+
+class CardPhoto(Base):
+    """A captured photo of one side of a card.
+
+    `filename` is a bare name relative to `PHOTOS_DIR`, never an absolute path —
+    the DB is shared between the Windows and Linux machines, so an absolute path
+    written on one is meaningless on the other.
+
+    `ebay_image_url` caches the eBay Picture Services URL produced when the photo
+    was uploaded for a listing. EPS images expire, so `ebay_image_expires_at`
+    decides whether it can be reused or has to be re-uploaded.
+
+    Rows are deleted (with their files) by the retention purge once the card has
+    been sold for CARD_PHOTO_RETENTION_DAYS."""
+    __tablename__ = "card_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    card_id: Mapped[int] = mapped_column(Integer, ForeignKey("cards.id"), nullable=False)
+    side: Mapped[str] = mapped_column(String, nullable=False)  # "front" | "back"
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ebay_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    ebay_image_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    card: Mapped["Card"] = relationship("Card", back_populates="photos")
+
+    # One photo per side per card — a retake replaces the existing row.
+    __table_args__ = (Index("ix_card_photos_card_side", "card_id", "side", unique=True),)
 
 
 class CardValue(Base):

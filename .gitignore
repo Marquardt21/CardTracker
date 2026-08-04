@@ -2,8 +2,11 @@
 .env
 
 # Python virtual environments
+# A venv is not portable between operating systems, so Windows keeps its own
+# (.venv-windows) alongside the Linux one.
 venv/
 .venv/
+.venv-windows/
 __pycache__/
 *.py[cod]
 *.egg-info/

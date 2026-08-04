@@ -20,6 +20,7 @@ class CardBase(BaseModel):
     parallel_color: str | None = None
     print_run: int | None = None
     condition: Condition = "near_mint"
+    pack_label: str | None = None
     notes: str | None = None
     grading_watchlist: bool = False
     sold_date: datetime | None = None
@@ -49,6 +50,7 @@ class CardUpdate(BaseModel):
     parallel_color: str | None = None
     print_run: int | None = None
     condition: Condition | None = None
+    pack_label: str | None = None
     notes: str | None = None
     grading_watchlist: bool | None = None
     sold_date: datetime | None = None
@@ -56,9 +58,20 @@ class CardUpdate(BaseModel):
     sold_listing_url: str | None = None
 
 
+class CardPhotoOut(BaseModel):
+    """One side's photo. `url` is served by the /photos mount, so the frontend
+    never has to know where on disk the file lives."""
+    side: str
+    url: str
+    captured_at: datetime
+    uploaded_to_ebay: bool = False
+
+
 class CardOut(CardBase):
     id: int
     date_added: datetime
+    # Filename of the front photo, relative to the /photos mount. Kept for the
+    # collection thumbnail; /cards/{id}/photos is the full front+back view.
     photo_path: str | None = None
     checklist_matched: bool = False
     model_config = {"from_attributes": True}

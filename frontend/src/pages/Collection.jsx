@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { exportWhatnotCsv, getActiveListings, getCards, getListingSummaries, refreshListingSummary, toggleWatchlist } from '../api/client'
+import { exportWhatnotCsv, getActiveListings, getCards, getListingSummaries, photoSrc, refreshListingSummary, toggleWatchlist } from '../api/client'
 import CreateEbayDraftModal from '../components/CreateEbayDraftModal'
 
 const TYPE_LABELS = { base:'Base', rookie:'RC', parallel:'Parallel', autograph:'Auto', patch_relic:'Patch' }
@@ -320,7 +320,7 @@ export default function Collection() {
                   </div>
                 )}
                 {card.photo_path
-                  ? <img src={`/photos/${card.photo_path.split('/').pop()}`} alt={card.player_name} className="w-12 h-16 object-cover rounded-lg flex-shrink-0" />
+                  ? <img src={photoSrc(card.photo_path)} alt={card.player_name} className="w-12 h-16 object-cover rounded-lg flex-shrink-0" />
                   : <div className="w-12 h-16 bg-[#0D1B2A] rounded-lg flex-shrink-0 flex items-center justify-center text-xl">🃏</div>
                 }
                 <div className="flex-1 min-w-0">
@@ -331,6 +331,7 @@ export default function Collection() {
                     <span className="text-xs bg-[#0D1B2A] text-[#A8DADC] px-2 py-0.5 rounded-full">{TYPE_LABELS[card.card_type]}</span>
                     <span className="text-xs bg-[#0D1B2A] text-[#94A3B8] px-2 py-0.5 rounded-full">{COND_LABELS[card.condition]}</span>
                     {card.parallel_color && <span className="text-xs bg-[#0D1B2A] text-yellow-400 px-2 py-0.5 rounded-full">{card.parallel_color}</span>}
+                    {card.pack_label && <span className="text-xs bg-[#0D1B2A] text-[#A8DADC] px-2 py-0.5 rounded-full">📦 {card.pack_label}</span>}
                     {!card.checklist_matched && <span className="text-xs bg-yellow-900/40 text-yellow-400 px-2 py-0.5 rounded-full">Unmatched</span>}
                     {card.is_sold && <span className="text-xs bg-green-900/40 text-green-400 px-2 py-0.5 rounded-full">Sold</span>}
                     {card.is_selling && !card.is_sold && <span className="text-xs bg-yellow-900/40 text-yellow-300 px-2 py-0.5 rounded-full">Listed</span>}
